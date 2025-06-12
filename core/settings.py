@@ -81,7 +81,7 @@ DATABASES = {
         'NAME': 'myapp',
         'USER': 'postgres',
         'PASSWORD': 'postgres',
-        'HOST': 'bd',
+        'HOST': 'db',
         'PORT': '5432',
     }
 }
