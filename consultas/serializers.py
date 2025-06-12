@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import Consulta
-from datetime import datetime
+from django.utils.timezone import now
 
 class ConsultaSerializer(serializers.ModelSerializer):
     class Meta:
@@ -8,6 +8,6 @@ class ConsultaSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def validate_data(self, value):
-        if value < datetime.now():
+        if value < now():
             raise serializers.ValidationError("A data da consulta deve ser futura.")
         return value

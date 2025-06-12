@@ -5,11 +5,13 @@
 sudo docker-compose exec web bash
 
 python manage.py makemigrations profissionais
-python manage.py migrate
-
 python manage.py makemigrations consultas
 python manage.py migrate
 
 
+python manage.py test
+
+python manage.py test profissionais
+python manage.py test consultas
 
 
