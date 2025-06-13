@@ -109,6 +109,11 @@ O deploy é automatizado via **Render** (Web Service conectado ao GitHub), acion
 - **Docker**: Containerização para facilitar deploy e desenvolvimento
 
 ---
+📊 Quadro do Projeto
+Visão Geral do Quadro
+![image](https://github.com/user-attachments/assets/2505eb72-b2f7-4463-9e8b-5556e12570b8)
+
+---
 
 ## 🛠️ Melhorias Futuras
 
