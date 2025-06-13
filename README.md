@@ -89,7 +89,7 @@ CMD ["sh", "-c", "python manage.py runserver 0.0.0.0:${PORT:-8000}"]
 ```
 
 ### 🔗 Link de Produção:
-**[https://lacrei-api.onrender.com/api/profissionais/](https://lacrei-api.onrender.com/api/?format=json)**
+**[https://lacrei-api.onrender.com/api](https://lacrei-api.onrender.com/api/?format=json)**
 
 ---
 
