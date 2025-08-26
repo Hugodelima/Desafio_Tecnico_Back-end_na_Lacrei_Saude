@@ -22,12 +22,12 @@ Esta API RESTful foi desenvolvida como parte do desafio técnico da **Lacrei Sa�
 
 ### 1. Subir o ambiente
 ```bash
-sudo docker-compose up --build
+sudo docker compose up
 ```
 
 ### 2. Acessar o container para migração
 ```bash
-sudo docker-compose exec web bash
+sudo docker compose exec web bash
 python manage.py migrate
 ```
 
