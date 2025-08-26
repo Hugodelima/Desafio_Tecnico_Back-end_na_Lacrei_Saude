@@ -4,9 +4,16 @@ from django.utils.timezone import now
 from django.core.exceptions import ValidationError
 
 class ConsultaSerializer(serializers.ModelSerializer):
+    profissional_nome = serializers.CharField(source='profissional.nome_social', read_only=True)
+    profissional_especialidade = serializers.CharField(source='profissional.profissao', read_only=True)
+    
     class Meta:
         model = Consulta
-        fields = '__all__'
+        fields = [
+            'id', 'data', 'profissional', 'profissional_nome', 
+            'profissional_especialidade', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['created_at', 'updated_at']
 
     def validate_data(self, value):
         """
@@ -24,13 +31,11 @@ class ConsultaSerializer(serializers.ModelSerializer):
         data_consulta = data.get('data')
         
         if profissional and data_consulta:
-            # Verifica se já existe uma consulta para o mesmo profissional no mesmo horário
             consultas_existentes = Consulta.objects.filter(
                 profissional=profissional,
                 data=data_consulta
             )
             
-            # Se estiver atualizando uma consulta existente, exclui a própria consulta da verificação
             if self.instance:
                 consultas_existentes = consultas_existentes.exclude(pk=self.instance.pk)
             

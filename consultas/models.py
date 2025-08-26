@@ -5,6 +5,8 @@ from django.core.exceptions import ValidationError
 class Consulta(models.Model):
     data = models.DateTimeField()
     profissional = models.ForeignKey(Profissional, on_delete=models.CASCADE, related_name="consultas")
+    created_at = models.DateTimeField(auto_now_add=True)  # Adicione este campo
+    updated_at = models.DateTimeField(auto_now=True)      # Adicione este campo
 
     class Meta:
         constraints = [
@@ -18,7 +20,6 @@ class Consulta(models.Model):
         """
         Validação para impedir agendamentos conflitantes
         """
-        # Verifica se já existe uma consulta para o mesmo profissional no mesmo horário
         if Consulta.objects.filter(
             profissional=self.profissional,
             data=self.data

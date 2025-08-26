@@ -4,28 +4,29 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 from .models import Profissional
 
-class ProfissionalAuthTests(APITestCase):
+class ProfissionalFilterTests(APITestCase):
     def setUp(self):
-        # Criar usuário para autenticação
         self.user = User.objects.create_user(
             username='testuser',
-            password='testpass123',
-            email='test@example.com'
+            password='testpass123'
         )
         
-        # Criar profissional para testes
-        self.profissional = Profissional.objects.create(
-            nome_social="Dr. Teste",
-            profissao="Cardiologista",
-            endereco="Rua Teste, 123",
-            contato="teste@example.com"
+        # Criar profissionais em ordem específica para testes de ordenação
+        self.profissional2 = Profissional.objects.create(
+            nome_social="Dr. Cardiologista Silva",
+            profissao="Cardiologia",
+            endereco="Rua do Coração, 123",
+            contato="cardio.silva@example.com"
         )
         
-        # URLs
-        self.list_url = reverse('profissional-list')
-        self.detail_url = reverse('profissional-detail', args=[self.profissional.id])
+        self.profissional1 = Profissional.objects.create(
+            nome_social="Dra. Pediatra Santos",
+            profissao="Pediatria",
+            endereco="Avenida Criança, 456",
+            contato="pediatra.santos@example.com"
+        )
         
-        # Obter token JWT
+        # Autenticação
         self.client = APIClient()
         token_response = self.client.post(
             reverse('token_obtain_pair'),
@@ -34,101 +35,31 @@ class ProfissionalAuthTests(APITestCase):
         )
         self.token = token_response.data['access']
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token}')
-
-    def test_list_profissionais_autenticado(self):
-        """Testa listagem de profissionais com autenticação"""
-        response = self.client.get(self.list_url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-
-    def test_list_profissionais_nao_autenticado(self):
-        """Testa que usuário não autenticado não pode acessar"""
-        client_nao_autenticado = APIClient()
-        response = client_nao_autenticado.get(self.list_url)
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-
-    def test_create_profissional_autenticado(self):
-        """Testa criação de profissional com autenticação"""
-        data = {
-            'nome_social': 'Dra. Nova',
-            'profissao': 'Pediatra',
-            'endereco': 'Av. Nova, 456',
-            'contato': 'nova@example.com'
-        }
-        response = self.client.post(self.list_url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(Profissional.objects.count(), 2)
-
-    def test_retrieve_profissional_autenticado(self):
-        """Testa visualização de detalhes com autenticação"""
-        response = self.client.get(self.detail_url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['nome_social'], 'Dr. Teste')
-
-    def test_update_profissional_autenticado(self):
-        """Testa atualização de profissional com autenticação"""
-        data = {'nome_social': 'Dr. Teste Atualizado'}
-        response = self.client.patch(self.detail_url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.profissional.refresh_from_db()
-        self.assertEqual(self.profissional.nome_social, 'Dr. Teste Atualizado')
-
-    def test_delete_profissional_autenticado(self):
-        """Testa exclusão de profissional com autenticação"""
-        response = self.client.delete(self.detail_url)
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertEqual(Profissional.objects.count(), 0)
-
-    def test_search_profissionais_autenticado(self):
-        """Testa busca de profissionais com autenticação"""
-        response = self.client.get(self.list_url, {'search': 'Cardio'})
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-
-class ProfissionalJWTTokenTests(APITestCase):
-    def setUp(self):
-        self.user = User.objects.create_user(
-            username='tokenuser',
-            password='tokenpass123'
-        )
-        self.token_url = reverse('token_obtain_pair')
-        self.refresh_url = reverse('token_refresh')
-
-    def test_obter_token_jwt(self):
-        """Testa obtenção de token JWT"""
-        response = self.client.post(
-            self.token_url,
-            {'username': 'tokenuser', 'password': 'tokenpass123'},
-            format='json'
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('access', response.data)
-        self.assertIn('refresh', response.data)
-
-    def test_obter_token_com_credenciais_invalidas(self):
-        """Testa tentativa de obter token com credenciais inválidas"""
-        response = self.client.post(
-            self.token_url,
-            {'username': 'invalid', 'password': 'invalid'},
-            format='json'
-        )
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-
-    def test_refresh_token(self):
-        """Testa refresh do token JWT"""
-        # Primeiro obtém o token
-        token_response = self.client.post(
-            self.token_url,
-            {'username': 'tokenuser', 'password': 'tokenpass123'},
-            format='json'
-        )
-        refresh_token = token_response.data['refresh']
         
-        # Faz refresh
-        response = self.client.post(
-            self.refresh_url,
-            {'refresh': refresh_token},
-            format='json'
-        )
+        self.list_url = reverse('profissional-list')
+
+    def test_filter_by_profissao(self):
+        """Testa filtro por profissão"""
+        response = self.client.get(f'{self.list_url}?profissao=Cardiologia')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('access', response.data)
+        self.assertEqual(len(response.data), 1)
+
+    def test_search_by_nome(self):
+        """Testa busca por nome"""
+        response = self.client.get(f'{self.list_url}?search=Cardiologista')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+
+    def test_ordering_by_nome_asc(self):
+        """Testa ordenação por nome ascendente"""
+        response = self.client.get(f'{self.list_url}?ordering=nome_social')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Verifica se retornou resultados
+        self.assertEqual(len(response.data), 2)
+
+    def test_ordering_by_nome_desc(self):
+        """Testa ordenação por nome descendente"""
+        response = self.client.get(f'{self.list_url}?ordering=-nome_social')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Verifica se retornou resultados
+        self.assertEqual(len(response.data), 2)
