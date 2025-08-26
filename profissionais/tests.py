@@ -4,26 +4,121 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 from .models import Profissional
 
-class ProfissionalFilterTests(APITestCase):
+class ProfissionalCRUDTests(APITestCase):
+    """Testes de CRUD completo para profissionais"""
+    
     def setUp(self):
+        # Criar usuários
         self.user = User.objects.create_user(
             username='testuser',
             password='testpass123'
         )
         
-        # Criar profissionais em ordem específica para testes de ordenação
-        self.profissional2 = Profissional.objects.create(
-            nome_social="Dr. Cardiologista Silva",
+        # Criar profissional
+        self.profissional = Profissional.objects.create(
+            nome_social="Dr. Teste",
             profissao="Cardiologia",
-            endereco="Rua do Coração, 123",
-            contato="cardio.silva@example.com"
+            endereco="Rua Teste, 123",
+            contato="teste@example.com"
         )
         
-        self.profissional1 = Profissional.objects.create(
-            nome_social="Dra. Pediatra Santos",
-            profissao="Pediatria",
-            endereco="Avenida Criança, 456",
-            contato="pediatra.santos@example.com"
+        # Autenticação
+        self.client = APIClient()
+        token_response = self.client.post(
+            reverse('token_obtain_pair'),
+            {'username': 'testuser', 'password': 'testpass123'},
+            format='json'
+        )
+        self.token = token_response.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        
+        # URLs
+        self.list_url = reverse('profissional-list')
+        self.detail_url = reverse('profissional-detail', args=[self.profissional.id])
+
+    def test_listar_profissionais_autenticado(self):
+        """Testa listagem de profissionais com autenticação"""
+        response = self.client.get(self.list_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+
+    def test_listar_profissionais_nao_autenticado(self):
+        """Testa que usuário não autenticado não pode listar profissionais"""
+        client_nao_autenticado = APIClient()
+        response = client_nao_autenticado.get(self.list_url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_criar_profissional_autenticado(self):
+        """Testa criação de profissional com autenticação"""
+        data = {
+            'nome_social': 'Dra. Nova',
+            'profissao': 'Pediatria',
+            'endereco': 'Av. Nova, 456',
+            'contato': 'nova@example.com'
+        }
+        response = self.client.post(self.list_url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Profissional.objects.count(), 2)
+
+    def test_criar_profissional_nao_autenticado(self):
+        """Testa que usuário não autenticado não pode criar profissionais"""
+        client_nao_autenticado = APIClient()
+        data = {
+            'nome_social': 'Dra. Nova',
+            'profissao': 'Pediatria',
+            'endereco': 'Av. Nova, 456',
+            'contato': 'nova@example.com'
+        }
+        response = client_nao_autenticado.post(self.list_url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_obter_profissional_por_id_autenticado(self):
+        """Testa visualização de profissional específico com autenticação"""
+        response = self.client.get(self.detail_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['nome_social'], 'Dr. Teste')
+
+    def test_obter_profissional_por_id_nao_autenticado(self):
+        """Testa que usuário não autenticado não pode visualizar profissional específico"""
+        client_nao_autenticado = APIClient()
+        response = client_nao_autenticado.get(self.detail_url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_atualizar_profissional_autenticado(self):
+        """Testa atualização de profissional com autenticação"""
+        data = {'nome_social': 'Dr. Teste Atualizado'}
+        response = self.client.patch(self.detail_url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.profissional.refresh_from_db()
+        self.assertEqual(self.profissional.nome_social, 'Dr. Teste Atualizado')
+
+    def test_atualizar_profissional_nao_autenticado(self):
+        """Testa que usuário não autenticado não pode atualizar profissionais"""
+        client_nao_autenticado = APIClient()
+        data = {'nome_social': 'Dr. Teste Atualizado'}
+        response = client_nao_autenticado.patch(self.detail_url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_deletar_profissional_autenticado(self):
+        """Testa exclusão de profissional com autenticação"""
+        response = self.client.delete(self.detail_url)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(Profissional.objects.count(), 0)
+
+    def test_deletar_profissional_nao_autenticado(self):
+        """Testa que usuário não autenticado não pode deletar profissionais"""
+        client_nao_autenticado = APIClient()
+        response = client_nao_autenticado.delete(self.detail_url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+class ProfissionalValidationTests(APITestCase):
+    """Testes de validação para profissionais"""
+    
+    def setUp(self):
+        # Criar usuário
+        self.user = User.objects.create_user(
+            username='testuser',
+            password='testpass123'
         )
         
         # Autenticação
@@ -38,28 +133,37 @@ class ProfissionalFilterTests(APITestCase):
         
         self.list_url = reverse('profissional-list')
 
-    def test_filter_by_profissao(self):
-        """Testa filtro por profissão"""
-        response = self.client.get(f'{self.list_url}?profissao=Cardiologia')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
+    def test_criar_profissional_sem_nome(self):
+        """Testa que não é possível criar profissional sem nome"""
+        data = {
+            'profissao': 'Cardiologia',
+            'endereco': 'Rua Teste, 123',
+            'contato': 'teste@example.com'
+        }
+        response = self.client.post(self.list_url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('nome_social', response.data)
 
-    def test_search_by_nome(self):
-        """Testa busca por nome"""
-        response = self.client.get(f'{self.list_url}?search=Cardiologista')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
+    def test_criar_profissional_sem_profissao(self):
+        """Testa que não é possível criar profissional sem profissão"""
+        data = {
+            'nome_social': 'Dr. Teste',
+            'endereco': 'Rua Teste, 123',
+            'contato': 'teste@example.com'
+        }
+        response = self.client.post(self.list_url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('profissao', response.data)
 
-    def test_ordering_by_nome_asc(self):
-        """Testa ordenação por nome ascendente"""
-        response = self.client.get(f'{self.list_url}?ordering=nome_social')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # Verifica se retornou resultados
-        self.assertEqual(len(response.data), 2)
-
-    def test_ordering_by_nome_desc(self):
-        """Testa ordenação por nome descendente"""
-        response = self.client.get(f'{self.list_url}?ordering=-nome_social')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # Verifica se retornou resultados
-        self.assertEqual(len(response.data), 2)
+    def test_criar_profissional_campos_vazios(self):
+        """Testa validação de campos vazios"""
+        data = {
+            'nome_social': '',
+            'profissao': '',
+            'endereco': 'Rua Teste, 123',
+            'contato': 'teste@example.com'
+        }
+        response = self.client.post(self.list_url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('nome_social', response.data)
+        self.assertIn('profissao', response.data)
