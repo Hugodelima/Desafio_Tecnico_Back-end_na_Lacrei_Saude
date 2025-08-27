@@ -5,9 +5,21 @@ from django_filters.rest_framework import DjangoFilterBackend
 from .models import Profissional
 from .serializers import ProfissionalSerializer
 from django.db.models import Q
-from consultas.serializers import ConsultaSerializer  # Corrige a importação
+from consultas.serializers import ConsultaSerializer
 
 class ProfissionalViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para gerenciamento de profissionais de saúde.
+    
+    Permite operações CRUD completas e endpoints personalizados.
+    Requer autenticação JWT para acesso.
+    
+    Filtros disponíveis:
+    - profissao: Filtra por profissão específica
+    - search: Busca por nome, profissão, endereço ou contato
+    - ordering: Ordena por nome_social, profissao ou created_at
+    """
+    
     serializer_class = ProfissionalSerializer
     permission_classes = [permissions.IsAuthenticated]
     queryset = Profissional.objects.all()
@@ -18,6 +30,15 @@ class ProfissionalViewSet(viewsets.ModelViewSet):
     search_fields = ['nome_social', 'profissao', 'endereco', 'contato']
 
     def get_queryset(self):
+        """
+        Retorna queryset de profissionais com filtros aplicados.
+        
+        Suporta busca por termo livre nos campos:
+        - nome_social
+        - profissao
+        - endereco
+        - contato
+        """
         queryset = Profissional.objects.all()
         search = self.request.query_params.get('search')
         if search:
@@ -31,11 +52,24 @@ class ProfissionalViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def me(self, request):
+        """
+        Endpoint para informações do profissional autenticado.
+        
+        Retorna informações básicas do profissional associado ao usuário logado.
+        """
         return Response({"message": "Endpoint para informações do profissional autenticado"})
 
     @action(detail=True, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def consultas(self, request, pk=None):
-        """Endpoint para listar consultas de um profissional específico"""
+        """
+        Lista consultas de um profissional específico.
+        
+        Parâmetros opcionais:
+        - data_inicio: Filtra consultas a partir desta data (YYYY-MM-DD)
+        - data_fim: Filtra consultas até esta data (YYYY-MM-DD)
+        
+        Retorna lista de consultas agendadas para o profissional.
+        """
         profissional = self.get_object()
         consultas = profissional.consultas.all()
         
@@ -59,6 +93,5 @@ class ProfissionalViewSet(viewsets.ModelViewSet):
             except ValueError:
                 pass
         
-        # Use a importação correta
         serializer = ConsultaSerializer(consultas, many=True)
         return Response(serializer.data)

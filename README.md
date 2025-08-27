@@ -29,6 +29,7 @@ sudo docker compose up
 ```bash
 sudo docker compose exec web bash
 python manage.py migrate
+python manage.py runserver
 ```
 
 ### 3. API disponível em:

@@ -5,7 +5,7 @@ FROM python:3.11-slim
 WORKDIR /code
 
 # 3. Instala dependências do sistema necessárias para o PostgreSQL funcionar com Python
-RUN apt-get update && apt-get install -y libpq-dev
+RUN apt-get update && apt-get install -y libpq-dev gcc
 
 # 4. Copia o arquivo de dependências para o container
 COPY requirements.txt .
@@ -16,11 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 6. Copia o restante da aplicação Django
 COPY . .
 
-# 7. Expõe a porta padrão do Django
-EXPOSE 8000
+# 7. Expõe a porta 8082 do Django
+EXPOSE 8080
 
-# 8. Comando para rodar o servidor da aplicação
-#CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
-CMD ["sh", "-c", "python manage.py runserver 0.0.0.0:${PORT:-8000}"]
-
-
+# 8. Comando para rodar o servidor na porta 8080
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8080"]
