@@ -13,7 +13,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'fallback-key')
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost").split(",")
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,0.0.0.0").split(",")
 
 # Application definition
 INSTALLED_APPS = [
@@ -100,7 +100,9 @@ USE_I18N = True
 USE_TZ = True
 
 # Static files
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # REST Framework Configuration
@@ -116,7 +118,19 @@ REST_FRAMEWORK = {
         'rest_framework.filters.OrderingFilter',
         'rest_framework.filters.SearchFilter',
     ),
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
 }
+
+# Em desenvolvimento, habilitar a interface web do DRF
+if DEBUG:
+    REST_FRAMEWORK['DEFAULT_RENDERER_CLASSES'].append(
+        'rest_framework.renderers.BrowsableAPIRenderer'
+    )
+    REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES'] = [
+        'rest_framework.permissions.AllowAny',
+    ]
 
 # JWT Settings
 SIMPLE_JWT = {
@@ -160,9 +174,8 @@ SWAGGER_SETTINGS = {
     'DEFAULT_MODEL_RENDERING': 'example',
 }
 
-# Configurações de desenvolvimento - desativar autenticação se necessário
-if DEBUG:
-    # Para desenvolvimento, pode ser útil desativar a autenticação
-    REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES'] = [
-        'rest_framework.permissions.AllowAny',
-    ]
+# Configuração específica para produção - desativar Swagger se necessário
+if not DEBUG:
+    # Opcional: desativar Swagger em produção se estiver causando problemas
+    # INSTALLED_APPS.remove('drf_yasg')
+    pass

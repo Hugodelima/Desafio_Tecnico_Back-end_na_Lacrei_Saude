@@ -15,7 +15,8 @@ Esta API RESTful foi desenvolvida como parte do desafio técnico da **Lacrei Sa�
 - **GitHub Actions** (CI/CD)
 - **.env** para variáveis sensíveis
 - **APITestCase** para testes automatizados
-
+- **JWT Authentication**
+- **Swagger/OpenAPI (documentação)**
 ---
 
 ## 🐳 Setup com Docker (recomendado)
@@ -25,16 +26,15 @@ Esta API RESTful foi desenvolvida como parte do desafio técnico da **Lacrei Sa�
 sudo docker compose up
 ```
 
-### 2. Acessar o container para migração
+### 2. Acessar o container para migração(se necessário)
 ```bash
 sudo docker compose exec web bash
 python manage.py migrate
-python manage.py runserver
 ```
 
 ### 3. API disponível em:
 ```
-http://localhost:8000/api/
+http://localhost:8000
 ```
 
 ---
@@ -89,9 +89,6 @@ A aplicação foi publicada em produção utilizando **Render.com** com:
 CMD ["sh", "-c", "python manage.py runserver 0.0.0.0:${PORT:-8000}"]
 ```
 
-### 🔗 Link de Produção:
-**[https://lacrei-api.onrender.com/api](https://lacrei-api.onrender.com/api/?format=json)**
-
 ---
 
 ## 🔁 CI/CD com GitHub Actions
@@ -108,43 +105,6 @@ O deploy é automatizado via **Render** (Web Service conectado ao GitHub), acion
 - **Variáveis de ambiente**: Uso de `.env` para garantir segurança de credenciais
 - **Configurações de segurança**: `ALLOWED_HOSTS`, `DEBUG=False`, validação rigorosa de input
 - **Docker**: Containerização para facilitar deploy e desenvolvimento
-
----
-📊 Quadro do Projeto
-Visão Geral do Quadro
-![image](https://github.com/user-attachments/assets/2505eb72-b2f7-4463-9e8b-5556e12570b8)
-
----
-
-## 🛠️ Melhorias Futuras
-
-- [ ] Integração real com **Asaas** para pagamentos
-- [ ] Autenticação via **JWT**
-- [ ] Sistema de permissões (admin, recepção, etc.)
-- [ ] Fluxo de rollback no deploy via GitHub Actions
-- [ ] Implementação de logs estruturados
-- [ ] Cache com Redis
-- [ ] Documentação automática com Swagger/OpenAPI
-
----
-
-## ❌ Erros Encontrados e Soluções
-
-### 1. **Conexão recusada ao banco**
-- **Problema**: API não conseguia conectar ao PostgreSQL
-- **Solução**: Configuração correta das variáveis de ambiente e delay na inicialização
-
-### 2. **Erro psycopg2 em host**
-- **Problema**: Nome do host do banco incorreto no Docker
-- **Solução**: Usar nome `db` igual ao serviço definido no docker-compose.yml
-
-### 3. **"relation does not exist"**
-- **Problema**: Tabelas não existiam em produção
-- **Solução**: Executar migrations corretamente no ambiente de produção
-
-### 4. **ALLOWED_HOSTS no Render**
-- **Problema**: Django bloqueando requisições por host não permitido
-- **Solução**: Configurar variável `ALLOWED_HOSTS` no painel do Render
 
 ---
 

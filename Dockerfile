@@ -16,8 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 6. Copia o restante da aplicação Django
 COPY . .
 
-# 7. Expõe a porta 8082 do Django
-EXPOSE 8080
+# 7. Expõe a porta 8000 do Django
+EXPOSE 8000
 
-# 8. Comando para rodar o servidor na porta 8080
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8080"]
+# 8. Comando para rodar o servidor na porta 8000 (corrigido)
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
