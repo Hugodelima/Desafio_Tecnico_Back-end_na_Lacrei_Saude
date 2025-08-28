@@ -16,8 +16,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 6. Copia o restante da aplicação Django
 COPY . .
 
-# 7. Expõe a porta 8000 do Django
+# 7. Coleta arquivos estáticos (importante para produção)
+RUN python manage.py collectstatic --noinput
+
+# 8. Expõe a porta 8000 do Django
 EXPOSE 8000
 
-# 8. Comando para rodar o servidor na porta 8000 (corrigido)
+# 9. Comando para rodar o servidor
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

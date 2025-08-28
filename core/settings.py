@@ -15,6 +15,11 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'fallback-key')
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,0.0.0.0").split(",")
 
+# Adicionar host do Render automaticamente
+RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+if RENDER_EXTERNAL_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+
 # Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -99,9 +104,19 @@ TIME_ZONE = 'America/Sao_Paulo'
 USE_I18N = True
 USE_TZ = True
 
-# Static files
+# Static files (CSS, JavaScript, Images)
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# Configurações específicas para produção
+if not DEBUG:
+    # Para produção, evitar problemas com arquivos estáticos
+    STATICFILES_DIRS = []
+    # Desativar a interface web do Swagger para evitar erros de arquivos estáticos
+    SWAGGER_UI = False
+else:
+    # Em desenvolvimento, permitir arquivos estáticos locais
+    STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -158,7 +173,7 @@ CORS_ALLOWED_ORIGINS = [
 
 CORS_ALLOW_CREDENTIALS = True
 
-# Swagger Settings
+# Swagger Settings - Configuração para produção
 SWAGGER_SETTINGS = {
     'SECURITY_DEFINITIONS': {
         'Bearer': {
@@ -172,10 +187,54 @@ SWAGGER_SETTINGS = {
     'JSON_EDITOR': True,
     'DOC_EXPANSION': 'none',
     'DEFAULT_MODEL_RENDERING': 'example',
+    'VALIDATOR_URL': None,  # Desativa validação
 }
 
-# Configuração específica para produção - desativar Swagger se necessário
+# Configuração específica para produção - desativar UI do Swagger se necessário
 if not DEBUG:
-    # Opcional: desativar Swagger em produção se estiver causando problemas
-    # INSTALLED_APPS.remove('drf_yasg')
-    pass
+    SWAGGER_SETTINGS.update({
+        'USE_SESSION_AUTH': False,
+        'VALIDATOR_URL': None,
+        'SHOW_REQUEST_HEADERS': True,
+        'OPERATIONS_SORTER': 'alpha',
+        'TAGS_SORTER': 'alpha',
+        'DOC_EXPANSION': 'none',
+        'DEEP_LINKING': True,
+        'PERSIST_AUTHORIZATION': True,
+        'DISPLAY_OPERATION_ID': False,
+    })
+    
+    # Forçar uso de CDN para recursos do Swagger em produção
+    SWAGGER_SETTINGS['DEFAULT_API_URL'] = None
+
+# Configurações de logging para debug
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'WARNING',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+    },
+}
+
+# Configuração de segurança para produção
+if not DEBUG:
+    # Security settings
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True

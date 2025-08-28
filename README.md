@@ -23,7 +23,7 @@ Esta API RESTful foi desenvolvida como parte do desafio técnico da **Lacrei Sa�
 
 ### 1. Subir o ambiente
 ```bash
-sudo docker compose up
+sudo docker compose up --build
 ```
 
 ### 2. Acessar o container para migração(se necessário)
