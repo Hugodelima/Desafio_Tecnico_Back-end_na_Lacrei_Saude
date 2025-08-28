@@ -12,6 +12,7 @@ Esta API RESTful foi desenvolvida como parte do desafio técnico da **Lacrei Sa�
 - **PostgreSQL**
 - **Docker + Docker Compose**
 - **Render.com** (deploy)
+
 - **GitHub Actions** (CI/CD)
 - **.env** para variáveis sensíveis
 - **APITestCase** para testes automatizados
@@ -131,6 +132,14 @@ O deploy é automatizado via **Render** (Web Service conectado ao GitHub), acion
 ├── .env.example
 └── README.md
 ```
+
+---
+
+## ☁️ Deploy no Render
+
+A aplicação está em produção no Render.com no seguinte link:
+
+**https://lacrei-api.onrender.com/**
 
 ---
 
