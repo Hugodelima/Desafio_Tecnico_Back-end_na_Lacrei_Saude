@@ -5,8 +5,8 @@ from django.core.exceptions import ValidationError
 class Consulta(models.Model):
     data = models.DateTimeField()
     profissional = models.ForeignKey(Profissional, on_delete=models.CASCADE, related_name="consultas")
-    created_at = models.DateTimeField(auto_now_add=True)  # Adicione este campo
-    updated_at = models.DateTimeField(auto_now=True)      # Adicione este campo
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         constraints = [

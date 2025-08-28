@@ -3,6 +3,7 @@ from rest_framework import status
 from django.contrib.auth.models import User
 from django.urls import reverse
 from .models import Profissional
+from django.utils.translation import gettext_lazy as _
 
 class ProfissionalCRUDTests(APITestCase):
     """Testes de CRUD completo para profissionais"""
@@ -40,6 +41,7 @@ class ProfissionalCRUDTests(APITestCase):
         """Testa listagem de profissionais com autenticação"""
         response = self.client.get(self.list_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # A estrutura agora retorna lista direta, não mais com 'results'
         self.assertEqual(len(response.data), 1)
 
     def test_listar_profissionais_nao_autenticado(self):
@@ -47,6 +49,7 @@ class ProfissionalCRUDTests(APITestCase):
         client_nao_autenticado = APIClient()
         response = client_nao_autenticado.get(self.list_url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertIn('error', response.data)
 
     def test_criar_profissional_autenticado(self):
         """Testa criação de profissional com autenticação"""
@@ -71,6 +74,7 @@ class ProfissionalCRUDTests(APITestCase):
         }
         response = client_nao_autenticado.post(self.list_url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertIn('error', response.data)
 
     def test_obter_profissional_por_id_autenticado(self):
         """Testa visualização de profissional específico com autenticação"""
@@ -83,6 +87,7 @@ class ProfissionalCRUDTests(APITestCase):
         client_nao_autenticado = APIClient()
         response = client_nao_autenticado.get(self.detail_url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertIn('error', response.data)
 
     def test_atualizar_profissional_autenticado(self):
         """Testa atualização de profissional com autenticação"""
@@ -98,6 +103,7 @@ class ProfissionalCRUDTests(APITestCase):
         data = {'nome_social': 'Dr. Teste Atualizado'}
         response = client_nao_autenticado.patch(self.detail_url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertIn('error', response.data)
 
     def test_deletar_profissional_autenticado(self):
         """Testa exclusão de profissional com autenticação"""
@@ -110,6 +116,7 @@ class ProfissionalCRUDTests(APITestCase):
         client_nao_autenticado = APIClient()
         response = client_nao_autenticado.delete(self.detail_url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertIn('error', response.data)
 
 class ProfissionalValidationTests(APITestCase):
     """Testes de validação para profissionais"""
@@ -142,7 +149,8 @@ class ProfissionalValidationTests(APITestCase):
         }
         response = self.client.post(self.list_url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('nome_social', response.data)
+        self.assertIn('error', response.data)
+        self.assertIn('details', response.data)
 
     def test_criar_profissional_sem_profissao(self):
         """Testa que não é possível criar profissional sem profissão"""
@@ -153,7 +161,8 @@ class ProfissionalValidationTests(APITestCase):
         }
         response = self.client.post(self.list_url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('profissao', response.data)
+        self.assertIn('error', response.data)
+        self.assertIn('details', response.data)
 
     def test_criar_profissional_campos_vazios(self):
         """Testa validação de campos vazios"""
@@ -165,5 +174,44 @@ class ProfissionalValidationTests(APITestCase):
         }
         response = self.client.post(self.list_url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('nome_social', response.data)
-        self.assertIn('profissao', response.data)
+        self.assertIn('error', response.data)
+        self.assertIn('details', response.data)
+
+    def test_criar_profissional_nome_curto(self):
+        """Testa validação de nome muito curto"""
+        data = {
+            'nome_social': 'A',
+            'profissao': 'Cardiologia',
+            'endereco': 'Rua Teste, 123',
+            'contato': 'teste@example.com'
+        }
+        response = self.client.post(self.list_url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('error', response.data)
+        self.assertIn('details', response.data)
+
+    def test_criar_profissional_profissao_curta(self):
+        """Testa validação de profissão muito curta"""
+        data = {
+            'nome_social': 'Dr. Teste',
+            'profissao': 'Ca',
+            'endereco': 'Rua Teste, 123',
+            'contato': 'teste@example.com'
+        }
+        response = self.client.post(self.list_url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('error', response.data)
+        self.assertIn('details', response.data)
+
+    def test_criar_profissional_contato_invalido(self):
+        """Testa validação de contato inválido"""
+        data = {
+            'nome_social': 'Dr. Teste',
+            'profissao': 'Cardiologia',
+            'endereco': 'Rua Teste, 123',
+            'contato': 'invalido'
+        }
+        response = self.client.post(self.list_url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('error', response.data)
+        self.assertIn('details', response.data)
