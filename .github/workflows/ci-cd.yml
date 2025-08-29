@@ -81,19 +81,7 @@ jobs:
     - name: Create test superuser
       run: |
         echo "Criando superusuário para testes..."
-        python -c "
-import os
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
-import django
-django.setup()
-from django.contrib.auth import get_user_model
-User = get_user_model()
-if not User.objects.filter(username='admin').exists():
-    User.objects.create_superuser('admin', 'admin@test.com', 'password')
-    print('Superusuário criado')
-else:
-    print('Superusuário já existe')
-        "
+        python -c "import os; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings'); import django; django.setup(); from django.contrib.auth import get_user_model; User = get_user_model(); print('Superusuário criado' if not User.objects.filter(username='admin').exists() and User.objects.create_superuser('admin', 'admin@test.com', 'password') else 'Superusuário já existe')"
 
     - name: Run tests
       run: |
@@ -104,10 +92,8 @@ else:
       if: failure()
       run: |
         echo "=== Executando testes individualmente para debug ==="
-        for app in profissionais consultas; do
-          echo "Testando $app..."
-          python manage.py test $app.tests --verbosity=2 --no-input || true
-        done
+        python manage.py test profissionais.tests --verbosity=2 --no-input || true
+        python manage.py test consultas.tests --verbosity=2 --no-input || true
 
   build-and-deploy:
     name: Build and Deploy
