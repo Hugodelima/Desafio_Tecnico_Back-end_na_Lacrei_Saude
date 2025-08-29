@@ -185,7 +185,7 @@ SWAGGER_SETTINGS = {
     },
     'USE_SESSION_AUTH': False,
     'JSON_EDITOR': True,
-    'DOC_EXPansion': 'none',
+    'DOC_EXPANSION': 'none',
     'DEFAULT_MODEL_RENDERING': 'example',
     'VALIDATOR_URL': None,  # Desativa validação
 }
@@ -246,10 +246,12 @@ if not DEBUG:
 if os.environ.get('GITHUB_ACTIONS') == 'true' or os.environ.get('CI') == 'true':
     print("=== Running in CI environment ===")
     
-    # Desativa autenticação para testes CI
-    REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'] = []
+    # MANTÉM autenticação JWT para os testes funcionarem
+    REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'] = [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ]
     REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES'] = [
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticated',
     ]
     
     # Configurações específicas para banco de testes
@@ -266,7 +268,6 @@ if os.environ.get('GITHUB_ACTIONS') == 'true' or os.environ.get('CI') == 'true':
         'security.W001',  # Security middleware
         'security.W004',  # SECURE_HSTS_SECONDS
         'security.W008',  # SECURE_SSL_REDIRECT
-        'security.W009',  # SECURE_HSTS_INCLUDE_SUBDOMAINS
         'security.W012',  # SESSION_COOKIE_SECURE
         'security.W016',  # CSRF_COOKIE_SECURE
     ]
