@@ -53,7 +53,7 @@ class ConsultaCRUDTests(APITestCase):
         # Autenticar primeiro usuário
         self.client = APIClient()
         token_response = self.client.post(
-            reverse('token_obtain_pair'),
+            '/api/token/',  # CORRIGIDO: URL com barra
             {'username': 'testuser', 'password': 'testpass123'},
             format='json'
         )
@@ -71,7 +71,7 @@ class ConsultaCRUDTests(APITestCase):
         """Testa que usuário não autenticado não pode listar consultas"""
         client_nao_autenticado = APIClient()
         response = client_nao_autenticado.get(self.list_url)
-        # Agora deve retornar 401 com mensagem estruturada
+        # Agora deve retornar 401 con mensagem estruturada
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertIn('error', response.data)
         self.assertIn('message', response.data)
@@ -111,7 +111,7 @@ class ConsultaCRUDTests(APITestCase):
         self.assertIn('error', response.data)
 
     def test_atualizar_consulta_autenticado(self):
-        """Testa atualização de consulta com autenticação"""
+        """Testa atualização de consulta con autenticação"""
         nova_data = (timezone.now() + timedelta(days=3)).isoformat()
         data = {
             'data': nova_data,
@@ -134,7 +134,7 @@ class ConsultaCRUDTests(APITestCase):
         self.assertIn('error', response.data)
 
     def test_deletar_consulta_autenticado(self):
-        """Testa exclusão de consulta com autenticação"""
+        """Testa exclusão de consulta con autenticação"""
         response = self.client.delete(self.detail_url)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertEqual(Consulta.objects.count(), 0)
@@ -147,7 +147,7 @@ class ConsultaCRUDTests(APITestCase):
         self.assertIn('error', response.data)
 
     def test_criar_consulta_data_passada(self):
-        """Testa que não é possível criar consulta com data passada"""
+        """Testa que não é possível criar consulta con data passada"""
         data = {
             'data': (timezone.now() - timedelta(days=1)).isoformat(),
             'profissional': self.profissional1.id
@@ -196,7 +196,7 @@ class ConsultaConflitoTests(APITestCase):
         # Autenticação
         self.client = APIClient()
         token_response = self.client.post(
-            reverse('token_obtain_pair'),
+            '/api/token/',  # CORRIGIDO: URL com barra
             {'username': 'testuser', 'password': 'testpass123'},
             format='json'
         )
@@ -288,7 +288,7 @@ class ConsultaAuthorizationTests(APITestCase):
         # Criar consulta com user1 autenticado
         self.client = APIClient()
         token_response = self.client.post(
-            reverse('token_obtain_pair'),
+            '/api/token/',  # CORRIGIDO: URL com barra
             {'username': 'user1', 'password': 'pass123'},
             format='json'
         )
@@ -312,7 +312,7 @@ class ConsultaAuthorizationTests(APITestCase):
         """Testa que usuário2 pode acessar consulta criada por usuário1"""
         # Autenticar como user2
         token_response = self.client.post(
-            reverse('token_obtain_pair'),
+            '/api/token/',  # CORRIGIDO: URL com barra
             {'username': 'user2', 'password': 'pass123'},
             format='json'
         )
@@ -327,7 +327,7 @@ class ConsultaAuthorizationTests(APITestCase):
         """Testa que usuário2 pode editar consulta criada por usuário1"""
         # Autenticar como user2
         token_response = self.client.post(
-            reverse('token_obtain_pair'),
+            '/api/token/',  # CORRIGIDO: URL com barra
             {'username': 'user2', 'password': 'pass123'},
             format='json'
         )
@@ -346,7 +346,7 @@ class ConsultaAuthorizationTests(APITestCase):
         """Testa que usuário2 pode deletar consulta criada por usuário1"""
         # Autenticar como user2
         token_response = self.client.post(
-            reverse('token_obtain_pair'),
+            '/api/token/',  # CORRIGIDO: URL com barra
             {'username': 'user2', 'password': 'pass123'},
             format='json'
         )
