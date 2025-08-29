@@ -72,24 +72,7 @@ jobs:
     - name: Create test data
       run: |
         echo "Preparando ambiente de teste..."
-        python -c "
-          import os
-          os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
-          import django
-          django.setup()
-
-          from django.contrib.auth import get_user_model
-          User = get_user_model()
-
-          # Criar superusuário se não existir
-          if not User.objects.filter(username='admin').exists():
-              User.objects.create_superuser('admin', 'admin@test.com', 'password')
-              print('Superusuário criado')
-          else:
-              print('Superusuário já existe')
-
-          print('Ambiente preparado para testes')
-        "
+        python -c "import os; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings'); import django; django.setup(); from django.contrib.auth import get_user_model; User = get_user_model(); print('Superusuário criado' if not User.objects.filter(username='admin').exists() and User.objects.create_superuser('admin', 'admin@test.com', 'password') else 'Superusuário já existe'); print('Ambiente preparado para testes')"
 
     - name: Run tests
       run: |
