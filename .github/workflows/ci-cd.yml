@@ -69,25 +69,35 @@ jobs:
       run: |
         python manage.py migrate --no-input
 
-    - name: Create test superuser
+    - name: Create test data
       run: |
-        echo "Criando superusuário para testes..."
-        python -c "import os; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings'); import django; django.setup(); from django.contrib.auth import get_user_model; User = get_user_model(); print('Superusuário criado' if not User.objects.filter(username='admin').exists() and User.objects.create_superuser('admin', 'admin@test.com', 'password') else 'Superusuário já existe')"
+        echo "Preparando ambiente de teste..."
+        python -c "
+          import os
+          os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
+          import django
+          django.setup()
+
+          from django.contrib.auth import get_user_model
+          User = get_user_model()
+
+          # Criar superusuário se não existir
+          if not User.objects.filter(username='admin').exists():
+              User.objects.create_superuser('admin', 'admin@test.com', 'password')
+              print('Superusuário criado')
+          else:
+              print('Superusuário já existe')
+
+          print('Ambiente preparado para testes')
+        "
 
     - name: Run tests
       run: |
         echo "=== Executando testes ==="
-        python manage.py test --verbosity=2 --no-input --failfast
+        python manage.py test --verbosity=2 --no-input
 
-    - name: Debug - Run tests individually if failed
-      if: failure()
-      run: |
-        echo "=== Executando testes individualmente para debug ==="
-        python manage.py test profissionais.tests --verbosity=2 --no-input || true
-        python manage.py test consultas.tests --verbosity=2 --no-input || true
-
-  build-and-deploy:
-    name: Build and Deploy
+  deploy:
+    name: Deploy to Production
     runs-on: ubuntu-latest
     environment: test
     needs: test

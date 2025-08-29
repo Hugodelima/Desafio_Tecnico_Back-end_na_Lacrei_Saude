@@ -240,21 +240,13 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = True
 
 # =============================================================================
-# CONFIGURAÇÕES ESPECÍFICAS PARA CI/TESTES
+# CONFIGURAÇÕES ESPECÍFICAS PARA CI/TESTES - SEM ALTERAR COMPORTAMENTO
 # =============================================================================
 
 if os.environ.get('GITHUB_ACTIONS') == 'true' or os.environ.get('CI') == 'true':
-    print("=== Running in CI environment ===")
+    print("=== Ambiente CI detectado ===")
     
-    # MANTÉM autenticação JWT para os testes funcionarem
-    REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'] = [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ]
-    REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES'] = [
-        'rest_framework.permissions.IsAuthenticated',
-    ]
-    
-    # Configurações específicas para banco de testes
+    # Configurações que não afetam o comportamento dos testes
     DATABASES['default']['TEST'] = {
         'NAME': 'test_db',
         'USER': 'postgres',
@@ -263,21 +255,10 @@ if os.environ.get('GITHUB_ACTIONS') == 'true' or os.environ.get('CI') == 'true':
         'PORT': '5432',
     }
     
-    # Configurações de performance para CI
-    SILENCED_SYSTEM_CHECKS = [
-        'security.W001',  # Security middleware
-        'security.W004',  # SECURE_HSTS_SECONDS
-        'security.W008',  # SECURE_SSL_REDIRECT
-        'security.W012',  # SESSION_COOKIE_SECURE
-        'security.W016',  # CSRF_COOKIE_SECURE
-    ]
-    
-    # Otimizações para testes
+    # Performance para CI (não afeta lógica de negócio)
     PASSWORD_HASHERS = [
         'django.contrib.auth.hashers.MD5PasswordHasher',
     ]
     
-    # Debug info
-    print("CI Configuration applied:")
-    print(f"- Authentication classes: {REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES']}")
-    print(f"- Permission classes: {REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES']}")
+    # Apenas logging para debug
+    print("Configuração CI aplicada (apenas otimizações)")
