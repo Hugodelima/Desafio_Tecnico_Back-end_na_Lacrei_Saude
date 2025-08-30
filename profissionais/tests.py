@@ -26,7 +26,7 @@ class ProfissionalCRUDTests(APITestCase):
         # Autenticação
         self.client = APIClient()
         token_response = self.client.post(
-            '/api/token/',  # CORRIGIDO: URL com barra
+            '/api/auth/token/',  # CORRIGIDO: URL com barra
             {'username': 'testuser', 'password': 'testpass123'},
             format='json'
         )
@@ -131,7 +131,7 @@ class ProfissionalValidationTests(APITestCase):
         # Autenticação
         self.client = APIClient()
         token_response = self.client.post(
-            '/api/token/',  # CORRIGIDO: URL com barra
+            '/api/auth/token/',  # CORRIGIDO: URL com barra
             {'username': 'testuser', 'password': 'testpass123'},
             format='json'
         )

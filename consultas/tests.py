@@ -53,7 +53,7 @@ class ConsultaCRUDTests(APITestCase):
         # Autenticar primeiro usuário
         self.client = APIClient()
         token_response = self.client.post(
-            '/api/token/',  # CORRIGIDO: URL com barra
+            '/api/auth/token/',  # CORRIGIDO: URL com barra
             {'username': 'testuser', 'password': 'testpass123'},
             format='json'
         )
@@ -196,7 +196,7 @@ class ConsultaConflitoTests(APITestCase):
         # Autenticação
         self.client = APIClient()
         token_response = self.client.post(
-            '/api/token/',  # CORRIGIDO: URL com barra
+            '/api/auth/token/',  # CORRIGIDO: URL com barra
             {'username': 'testuser', 'password': 'testpass123'},
             format='json'
         )
@@ -288,7 +288,7 @@ class ConsultaAuthorizationTests(APITestCase):
         # Criar consulta com user1 autenticado
         self.client = APIClient()
         token_response = self.client.post(
-            '/api/token/',  # CORRIGIDO: URL com barra
+            '/api/auth/token/',  # CORRIGIDO: URL com barra
             {'username': 'user1', 'password': 'pass123'},
             format='json'
         )
@@ -312,7 +312,7 @@ class ConsultaAuthorizationTests(APITestCase):
         """Testa que usuário2 pode acessar consulta criada por usuário1"""
         # Autenticar como user2
         token_response = self.client.post(
-            '/api/token/',  # CORRIGIDO: URL com barra
+            '/api/auth/token/',  # CORRIGIDO: URL com barra
             {'username': 'user2', 'password': 'pass123'},
             format='json'
         )
@@ -327,7 +327,7 @@ class ConsultaAuthorizationTests(APITestCase):
         """Testa que usuário2 pode editar consulta criada por usuário1"""
         # Autenticar como user2
         token_response = self.client.post(
-            '/api/token/',  # CORRIGIDO: URL com barra
+            '/api/auth/token/',  # CORRIGIDO: URL com barra
             {'username': 'user2', 'password': 'pass123'},
             format='json'
         )
@@ -346,7 +346,7 @@ class ConsultaAuthorizationTests(APITestCase):
         """Testa que usuário2 pode deletar consulta criada por usuário1"""
         # Autenticar como user2
         token_response = self.client.post(
-            '/api/token/',  # CORRIGIDO: URL com barra
+            '/api/auth/token/',  # CORRIGIDO: URL com barra
             {'username': 'user2', 'password': 'pass123'},
             format='json'
         )
