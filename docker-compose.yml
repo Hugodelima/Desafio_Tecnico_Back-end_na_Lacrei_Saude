@@ -1,40 +1,27 @@
 services:
   db:
     image: postgres:13
-    container_name: postgres-db
     environment:
+      POSTGRES_DB: lacrei_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: myapp
     ports:
       - "5432:5432"
     volumes:
-      - pg-data:/var/lib/postgresql/data
-    networks:
-      - app-network
+      - postgres_data:/var/lib/postgresql/data
 
   web:
     build: .
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
-      - .:/code
+      - .:/app
     ports:
-      - "8000:8000"  
+      - "8000:8000"
     environment:
-      DATABASE_HOST: db
-      DEBUG: 'True'
-      DJANGO_SECRET_KEY: 'chave-secreta'
-      POSTGRES_DB: myapp
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      DATABASE_PORT: "5432"
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/lacrei_db
+      - DEBUG=False
     depends_on:
       - db
-    networks:
-      - app-network
-
-networks:
-  app-network:
 
 volumes:
-  pg-data:
+  postgres_data:
