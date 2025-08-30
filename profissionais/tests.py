@@ -30,39 +30,54 @@ class ProfissionalCRUDTests(APITestCase):
         print("=== DEBUG CI ===")
         print(f"Testing URL: /api/auth/token/")
         
-        # SOLUÇÃO: Usar Client com follow=True para lidar automaticamente com redirecionamentos
+        # SOLUÇÃO: Remover follow=True e usar abordagem diferente
         token_response = self.client.post('/api/auth/token/', {
             'username': 'testuser', 
             'password': 'testpass123'
-        }, format='json', follow=True)  # ← ADICIONE follow=True AQUI
+        }, format='json')
         
-        print(f"Final response type: {type(token_response)}")
-        print(f"Final response status: {getattr(token_response, 'status_code', 'No status')}")
+        print(f"Response type: {type(token_response)}")
+        print(f"Response status: {getattr(token_response, 'status_code', 'No status')}")
         
         if hasattr(token_response, 'data'):
             print("✅ Response HAS data attribute")
             print(f"Response data keys: {list(token_response.data.keys())}")
-            self.token = token_response.data['access']
-            print("✅ Token obtained successfully")
-        else:
-            print("❌ Response still has NO data attribute")
-            print(f"Available attributes: {[attr for attr in dir(token_response) if not attr.startswith('_')]}")
-            if hasattr(token_response, 'content'):
-                print(f"Response content: {token_response.content}")
             
-            # TENTATIVA ALTERNATIVA: Usar a URL completa do testserver
-            print("Trying alternative approach with testserver URL...")
-            token_response = self.client.post('https://testserver/api/auth/token/', {
-                'username': 'testuser', 
-                'password': 'testpass123'
-            }, format='json')
+            # Verificar se é um erro 405
+            if token_response.status_code == 405:
+                print(f"Error detail: {token_response.data.get('detail', 'No detail')}")
+                # TENTATIVA ALTERNATIVA: Usar GET em vez de POST (apenas para teste)
+                print("Trying GET request instead of POST...")
+                token_response = self.client.get('/api/auth/token/', format='json')
+                print(f"GET response status: {token_response.status_code}")
+                print(f"GET response data: {getattr(token_response, 'data', 'No data')}")
+                self.fail("Authentication failed - method not allowed")
             
-            if hasattr(token_response, 'data'):
-                print("✅ Alternative approach worked!")
+            # Verificar se temos o token de acesso
+            elif 'access' in token_response.data:
                 self.token = token_response.data['access']
+                print("✅ Token obtained successfully")
             else:
-                print("❌ Alternative approach also failed")
-                self.fail("All authentication attempts failed")
+                print("❌ Response has data but no access token")
+                print(f"Full response data: {token_response.data}")
+                self.fail("Authentication failed - no access token in response")
+        else:
+            print("❌ Response has NO data attribute")
+            print(f"Available attributes: {[attr for attr in dir(token_response) if not attr.startswith('_')]}")
+            
+            # Se for redirecionamento, tentar a URL completa
+            if hasattr(token_response, 'url') and token_response.status_code in [301, 302]:
+                print(f"Redirect detected to: {token_response.url}")
+                print("Trying with full URL...")
+                token_response = self.client.post(token_response.url, {
+                    'username': 'testuser', 
+                    'password': 'testpass123'
+                }, format='json')
+                
+                if hasattr(token_response, 'data') and 'access' in token_response.data:
+                    self.token = token_response.data['access']
+                else:
+                    self.fail("Authentication failed after redirect")
         
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token}')
         
