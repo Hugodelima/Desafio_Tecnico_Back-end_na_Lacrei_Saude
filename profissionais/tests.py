@@ -61,7 +61,7 @@ class ProfissionalCRUDTests(APITestCase):
             else:
                 # Tentativa 3: Usar reverse() para obter URL exata
                 try:
-                    from django.urls import reverse
+                    
                     token_url = reverse('token_obtain_pair')
                     token_response = self.client.post(token_url, {
                         'username': 'testuser', 

@@ -82,13 +82,11 @@ class ConsultaCRUDTests(APITestCase):
             print(f"Attempt 2 - Status: {getattr(token_response, 'status_code', 'No status')}")
             
             if hasattr(token_response, 'data') and 'access' in token_response.data:
-                self.token = token_response.data['access']
                 auth_success = True
                 print("✅ Authentication successful with trailing slash")
             else:
                 # Tentativa 3: Usar reverse() para obter URL exata
                 try:
-                    from django.urls import reverse
                     token_url = reverse('token_obtain_pair')
                     token_response = self.client.post(token_url, {
                         'username': 'testuser', 
