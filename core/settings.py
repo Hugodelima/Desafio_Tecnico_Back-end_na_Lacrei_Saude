@@ -11,9 +11,12 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'fallback-key')
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'fallback-key-for-dev-only-change-in-production')
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,0.0.0.0").split(",")
+
+# Configuração de ALLOWED_HOSTS
+allowed_hosts_str = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,0.0.0.0")
+ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_str.split(",")]
 
 # Adicionar host do Render automaticamente
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
@@ -34,6 +37,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_filters',
     'drf_yasg',  # Documentação Swagger
+    'sslserver',  # Servidor SSL para desenvolvimento
     # Local apps
     'profissionais',
     'consultas',
@@ -74,10 +78,10 @@ WSGI_APPLICATION = 'core.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('POSTGRES_DB', 'test_db'),
+        'NAME': os.getenv('POSTGRES_DB', 'lacrei_db'),
         'USER': os.getenv('POSTGRES_USER', 'postgres'),
         'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'postgres'),
-        'HOST': os.getenv('DATABASE_HOST', 'localhost'),
+        'HOST': os.getenv('DATABASE_HOST', 'db'),
         'PORT': os.getenv('DATABASE_PORT', '5432'),
     }
 }
@@ -169,6 +173,8 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "https://localhost:3000",
+    "https://127.0.0.1:3000",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -226,18 +232,75 @@ LOGGING = {
             'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
             'propagate': False,
         },
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+        'sslserver': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
     },
 }
 
-# Configuração de segurança para produção
+# =============================================================================
+# CONFIGURAÇÕES SSL/HTTPS
+# =============================================================================
+
+# Configurações de segurança para HTTPS
+SECURE_SSL_REDIRECT = False  # Deixar False pois o runsslserver já lida com HTTPS
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+
+# Configurar CSRF_TRUSTED_ORIGINS para HTTPS
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+    'https://localhost:8000',
+    'https://127.0.0.1:8000',
+    'https://*.amazonaws.com',
+    'https://*.onrender.com'
+]
+
+# Adicionar automaticamente o IP do EC2 aos trusted origins
+EC2_IP = os.environ.get('EC2_IP')
+if EC2_IP:
+    CSRF_TRUSTED_ORIGINS.extend([
+        f'http://{EC2_IP}:8000',
+        f'https://{EC2_IP}:8000'
+    ])
+
+# Adicionar hosts SSL aos allowed hosts
+if not DEBUG:
+    ALLOWED_HOSTS.extend([
+        '*.amazonaws.com',
+        '*.compute.amazonaws.com',
+        '*.elasticbeanstalk.com',
+        'ec2-*-*-*-*.compute-1.amazonaws.com'
+    ])
+
+# Configuração específica para SSL no desenvolvimento
+if DEBUG:
+    # Permitir acesso via IP no desenvolvimento
+    ALLOWED_HOSTS.extend(['localhost', '127.0.0.1', '0.0.0.0', '::1'])
+    
+    # Para desenvolvimento com SSL, desativar algumas verificações
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    SECURE_SSL_REDIRECT = False
+
+# Configurações de segurança para produção
 if not DEBUG:
     # Security settings
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = 'DENY'
-    CSRF_COOKIE_SECURE = True
-    SESSION_COOKIE_SECURE = True
-    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
 
 # =============================================================================
 # CONFIGURAÇÕES ESPECÍFICAS PARA CI/TESTES
@@ -273,3 +336,37 @@ if os.environ.get('GITHUB_ACTIONS') == 'true' or os.environ.get('CI') == 'true':
     ]
     
     print("Configuração CI aplicada - Redirecionamentos SSL desativados")
+
+# =============================================================================
+# CONFIGURAÇÕES ADICIONAIS PARA SSL SERVER
+# =============================================================================
+
+# Configurações específicas para django-sslserver
+SSL_PORT = 8000
+SSL_CERTIFICATE = os.path.join(BASE_DIR, 'cert.pem')
+SSL_PRIVATE_KEY = os.path.join(BASE_DIR, 'key.pem')
+
+# Verificar se os arquivos de certificado existem
+SSL_CERTIFICATE_EXISTS = os.path.exists(SSL_CERTIFICATE)
+SSL_PRIVATE_KEY_EXISTS = os.path.exists(SSL_PRIVATE_KEY)
+
+if SSL_CERTIFICATE_EXISTS and SSL_PRIVATE_KEY_EXISTS:
+    print(f"✅ Certificado SSL encontrado: {SSL_CERTIFICATE}")
+    print(f"✅ Chave privada SSL encontrada: {SSL_PRIVATE_KEY}")
+else:
+    print(f"⚠️  Certificado SSL não encontrado: {SSL_CERTIFICATE}")
+    print(f"⚠️  Chave privada SSL não encontrada: {SSL_PRIVATE_KEY}")
+    print("💡 Execute: openssl req -x509 -newkey rsa:4096 -nodes -out cert.pem -keyout key.pem -days 365 -subj \"/C=BR/ST=SaoPaulo/L=SaoPaulo/O=Lacrei/CN=localhost\"")
+
+# Configuração de URLs seguras para Swagger/DRF
+if SSL_CERTIFICATE_EXISTS and SSL_PRIVATE_KEY_EXISTS:
+    USE_X_FORWARDED_HOST = True
+    USE_X_FORWARDED_PORT = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+print(f"=== Configurações SSL Carregadas ===")
+print(f"DEBUG: {DEBUG}")
+print(f"ALLOWED_HOSTS: {ALLOWED_HOSTS}")
+print(f"CSRF_TRUSTED_ORIGINS: {CSRF_TRUSTED_ORIGINS}")
+print(f"SSL Certificate: {SSL_CERTIFICATE_EXISTS}")
+print(f"SSL Private Key: {SSL_PRIVATE_KEY_EXISTS}")
