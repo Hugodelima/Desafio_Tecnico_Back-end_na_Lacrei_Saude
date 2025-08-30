@@ -52,32 +52,56 @@ class ConsultaCRUDTests(APITestCase):
         
         # Autenticar primeiro usuário
         self.client = APIClient()
-        token_response = self.client.post(
-            '/api/auth/token/',  # CORRIGIDO: URL com barra
-            {'username': 'testuser', 'password': 'testpass123'},
-            format='json'
-        )
-        self.token = token_response.data['access']
+        
+        # DEBUG CI - Adicione estas linhas
+        print("=== DEBUG CI CONSULTAS CRUD ===")
+        print(f"Testing URL: /api/auth/token/")
+        print(f"Username: testuser")
+        
+        token_response = self.client.post('/api/auth/token/', {
+            'username': 'testuser', 
+            'password': 'testpass123'
+        }, format='json')
+        
+        # DEBUG: Verificar a resposta
+        print(f"Response type: {type(token_response)}")
+        print(f"Response status: {getattr(token_response, 'status_code', 'No status')}")
+        
+        if hasattr(token_response, 'data'):
+            print("✅ Response HAS data attribute")
+            print(f"Response data keys: {list(token_response.data.keys())}")
+            self.token = token_response.data['access']
+            print("✅ Token obtained successfully")
+        else:
+            print("❌ Response has NO data attribute")
+            print(f"Available attributes: {[attr for attr in dir(token_response) if not attr.startswith('_')]}")
+            
+            # Tentar fallback para conteúdo bruto
+            if hasattr(token_response, 'content'):
+                print(f"Response content: {token_response.content}")
+            if hasattr(token_response, 'url'):
+                print(f"Redirect URL: {token_response.url}")
+                
+            self.fail("Authentication failed - check JWT configuration")
+        
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token}')
 
     def test_listar_consultas_autenticado(self):
-        """Testa listagem de consultas com autenticação"""
+        """Testa listagem de consultas con autenticação"""
         response = self.client.get(self.list_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # A estrutura agora retorna lista direta, não mais com 'results'
         self.assertEqual(len(response.data), 1)
 
     def test_listar_consultas_nao_autenticado(self):
         """Testa que usuário não autenticado não pode listar consultas"""
         client_nao_autenticado = APIClient()
         response = client_nao_autenticado.get(self.list_url)
-        # Agora deve retornar 401 con mensagem estruturada
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertIn('error', response.data)
         self.assertIn('message', response.data)
 
     def test_criar_consulta_autenticado(self):
-        """Testa criação de consulta com autenticação"""
+        """Testa criação de consulta con autenticação"""
         data = {
             'data': (timezone.now() + timedelta(days=2)).isoformat(),
             'profissional': self.profissional2.id
@@ -98,7 +122,7 @@ class ConsultaCRUDTests(APITestCase):
         self.assertIn('error', response.data)
 
     def test_obter_consulta_por_id_autenticado(self):
-        """Testa visualização de consulta específica com autenticação"""
+        """Testa visualização de consulta específica con autenticação"""
         response = self.client.get(self.detail_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['profissional'], self.profissional1.id)
@@ -195,12 +219,29 @@ class ConsultaConflitoTests(APITestCase):
         
         # Autenticação
         self.client = APIClient()
-        token_response = self.client.post(
-            '/api/auth/token/',  # CORRIGIDO: URL com barra
-            {'username': 'testuser', 'password': 'testpass123'},
-            format='json'
-        )
-        self.token = token_response.data['access']
+        
+        # DEBUG CI - Adicione estas linhas
+        print("=== DEBUG CI CONSULTAS CONFLITO ===")
+        print(f"Testing URL: /api/auth/token/")
+        
+        token_response = self.client.post('/api/auth/token/', {
+            'username': 'testuser', 
+            'password': 'testpass123'
+        }, format='json')
+        
+        # DEBUG: Verificar a resposta
+        print(f"Response type: {type(token_response)}")
+        print(f"Response status: {getattr(token_response, 'status_code', 'No status')}")
+        
+        if hasattr(token_response, 'data'):
+            print("✅ Response HAS data attribute")
+            self.token = token_response.data['access']
+            print("✅ Token obtained successfully")
+        else:
+            print("❌ Response has NO data attribute")
+            print(f"Available attributes: {[attr for attr in dir(token_response) if not attr.startswith('_')]}")
+            self.fail("Authentication failed")
+        
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token}')
         
         self.list_url = reverse('consulta-list')
@@ -217,7 +258,7 @@ class ConsultaConflitoTests(APITestCase):
         self.assertIn('details', response.data)
 
     def test_criar_consulta_mesmo_horario_profissional_diferente(self):
-        """Testa que é permitido mesmo horário com profissional diferente"""
+        """Testa que é permitido mesmo horário con profissional diferente"""
         profissional2 = Profissional.objects.create(
             nome_social="Dra. Outra",
             profissao="Pediatria",
@@ -287,12 +328,28 @@ class ConsultaAuthorizationTests(APITestCase):
         
         # Criar consulta com user1 autenticado
         self.client = APIClient()
-        token_response = self.client.post(
-            '/api/auth/token/',  # CORRIGIDO: URL com barra
-            {'username': 'user1', 'password': 'pass123'},
-            format='json'
-        )
-        self.token_user1 = token_response.data['access']
+        
+        # DEBUG CI - Adicione estas linhas
+        print("=== DEBUG CI CONSULTAS AUTHORIZATION ===")
+        print(f"Testing URL: /api/auth/token/ for user1")
+        
+        token_response = self.client.post('/api/auth/token/', {
+            'username': 'user1', 
+            'password': 'pass123'
+        }, format='json')
+        
+        # DEBUG: Verificar a resposta
+        print(f"Response type: {type(token_response)}")
+        print(f"Response status: {getattr(token_response, 'status_code', 'No status')}")
+        
+        if hasattr(token_response, 'data'):
+            print("✅ Response HAS data attribute")
+            self.token_user1 = token_response.data['access']
+            print("✅ Token for user1 obtained successfully")
+        else:
+            print("❌ Response has NO data attribute")
+            print(f"Available attributes: {[attr for attr in dir(token_response) if not attr.startswith('_')]}")
+            self.fail("Authentication failed for user1")
         
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token_user1}')
         
@@ -311,48 +368,74 @@ class ConsultaAuthorizationTests(APITestCase):
     def test_usuario2_pode_acessar_consulta_usuario1(self):
         """Testa que usuário2 pode acessar consulta criada por usuário1"""
         # Autenticar como user2
-        token_response = self.client.post(
-            '/api/auth/token/',  # CORRIGIDO: URL com barra
-            {'username': 'user2', 'password': 'pass123'},
-            format='json'
-        )
-        token_user2 = token_response.data['access']
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token_user2}')
+        print("=== DEBUG CI - Authenticating user2 ===")
         
-        # Tentar acessar consulta do user1
-        response = self.client.get(self.detail_url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        token_response = self.client.post('/api/auth/token/', {
+            'username': 'user2', 
+            'password': 'pass123'
+        }, format='json')
+        
+        print(f"User2 response type: {type(token_response)}")
+        print(f"User2 response status: {getattr(token_response, 'status_code', 'No status')}")
+        
+        if hasattr(token_response, 'data'):
+            print("✅ User2 response HAS data attribute")
+            token_user2 = token_response.data['access']
+            self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token_user2}')
+            
+            # Tentar acessar consulta do user1
+            response = self.client.get(self.detail_url)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+        else:
+            print("❌ User2 response has NO data attribute")
+            self.fail("Authentication failed for user2")
 
     def test_usuario2_pode_editar_consulta_usuario1(self):
         """Testa que usuário2 pode editar consulta criada por usuário1"""
         # Autenticar como user2
-        token_response = self.client.post(
-            '/api/auth/token/',  # CORRIGIDO: URL com barra
-            {'username': 'user2', 'password': 'pass123'},
-            format='json'
-        )
-        token_user2 = token_response.data['access']
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token_user2}')
+        print("=== DEBUG CI - Authenticating user2 for edit ===")
         
-        # Tentar editar consulta do user1
-        data = {
-            'data': (timezone.now() + timedelta(days=2)).isoformat(),
-            'profissional': self.profissional.id
-        }
-        response = self.client.put(self.detail_url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        token_response = self.client.post('/api/auth/token/', {
+            'username': 'user2', 
+            'password': 'pass123'
+        }, format='json')
+        
+        print(f"User2 edit response type: {type(token_response)}")
+        print(f"User2 edit response status: {getattr(token_response, 'status_code', 'No status')}")
+        
+        if hasattr(token_response, 'data'):
+            token_user2 = token_response.data['access']
+            self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token_user2}')
+            
+            # Tentar editar consulta do user1
+            data = {
+                'data': (timezone.now() + timedelta(days=2)).isoformat(),
+                'profissional': self.profissional.id
+            }
+            response = self.client.put(self.detail_url, data, format='json')
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+        else:
+            self.fail("Authentication failed for user2")
 
     def test_usuario2_pode_deletar_consulta_usuario1(self):
         """Testa que usuário2 pode deletar consulta criada por usuário1"""
         # Autenticar como user2
-        token_response = self.client.post(
-            '/api/auth/token/',  # CORRIGIDO: URL com barra
-            {'username': 'user2', 'password': 'pass123'},
-            format='json'
-        )
-        token_user2 = token_response.data['access']
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token_user2}')
+        print("=== DEBUG CI - Authenticating user2 for delete ===")
         
-        # Tentar deletar consulta do user1
-        response = self.client.delete(self.detail_url)
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        token_response = self.client.post('/api/auth/token/', {
+            'username': 'user2', 
+            'password': 'pass123'
+        }, format='json')
+        
+        print(f"User2 delete response type: {type(token_response)}")
+        print(f"User2 delete response status: {getattr(token_response, 'status_code', 'No status')}")
+        
+        if hasattr(token_response, 'data'):
+            token_user2 = token_response.data['access']
+            self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token_user2}')
+            
+            # Tentar deletar consulta do user1
+            response = self.client.delete(self.detail_url)
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        else:
+            self.fail("Authentication failed for user2")

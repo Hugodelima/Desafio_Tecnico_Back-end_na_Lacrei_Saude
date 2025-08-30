@@ -25,12 +25,37 @@ class ProfissionalCRUDTests(APITestCase):
         
         # Autenticação
         self.client = APIClient()
-        token_response = self.client.post(
-            '/api/auth/token/',  # CORRIGIDO: URL com barra
-            {'username': 'testuser', 'password': 'testpass123'},
-            format='json'
-        )
-        self.token = token_response.data['access']
+        
+        # DEBUG CI - Adicione estas linhas
+        print("=== DEBUG CI PROFISSIONAIS CRUD ===")
+        print(f"Testing URL: /api/auth/token/")
+        
+        token_response = self.client.post('/api/auth/token/', {
+            'username': 'testuser', 
+            'password': 'testpass123'
+        }, format='json')
+        
+        # DEBUG: Verificar a resposta
+        print(f"Response type: {type(token_response)}")
+        print(f"Response status: {getattr(token_response, 'status_code', 'No status')}")
+        
+        if hasattr(token_response, 'data'):
+            print("✅ Response HAS data attribute")
+            print(f"Response data keys: {list(token_response.data.keys())}")
+            self.token = token_response.data['access']
+            print("✅ Token obtained successfully")
+        else:
+            print("❌ Response has NO data attribute")
+            print(f"Available attributes: {[attr for attr in dir(token_response) if not attr.startswith('_')]}")
+            
+            # Tentar fallback para conteúdo bruto
+            if hasattr(token_response, 'content'):
+                print(f"Response content: {token_response.content}")
+            if hasattr(token_response, 'url'):
+                print(f"Redirect URL: {token_response.url}")
+                
+            self.fail("Authentication failed - check JWT configuration")
+        
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token}')
         
         # URLs
@@ -41,7 +66,6 @@ class ProfissionalCRUDTests(APITestCase):
         """Testa listagem de profissionais com autenticação"""
         response = self.client.get(self.list_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # A estrutura agora retorna lista direta, não mais com 'results'
         self.assertEqual(len(response.data), 1)
 
     def test_listar_profissionais_nao_autenticado(self):
@@ -130,12 +154,29 @@ class ProfissionalValidationTests(APITestCase):
         
         # Autenticação
         self.client = APIClient()
-        token_response = self.client.post(
-            '/api/auth/token/',  # CORRIGIDO: URL com barra
-            {'username': 'testuser', 'password': 'testpass123'},
-            format='json'
-        )
-        self.token = token_response.data['access']
+        
+        # DEBUG CI - Adicione estas linhas
+        print("=== DEBUG CI PROFISSIONAIS VALIDATION ===")
+        print(f"Testing URL: /api/auth/token/")
+        
+        token_response = self.client.post('/api/auth/token/', {
+            'username': 'testuser', 
+            'password': 'testpass123'
+        }, format='json')
+        
+        # DEBUG: Verificar a resposta
+        print(f"Response type: {type(token_response)}")
+        print(f"Response status: {getattr(token_response, 'status_code', 'No status')}")
+        
+        if hasattr(token_response, 'data'):
+            print("✅ Response HAS data attribute")
+            self.token = token_response.data['access']
+            print("✅ Token obtained successfully")
+        else:
+            print("❌ Response has NO data attribute")
+            print(f"Available attributes: {[attr for attr in dir(token_response) if not attr.startswith('_')]}")
+            self.fail("Authentication failed")
+        
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token}')
         
         self.list_url = reverse('profissional-list')
