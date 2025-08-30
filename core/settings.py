@@ -243,13 +243,20 @@ if not DEBUG:
 # CONFIGURAÇÕES ESPECÍFICAS PARA CI/TESTES
 # =============================================================================
 
+# No seu settings.py, na seção de configurações CI, adicione:
 if os.environ.get('GITHUB_ACTIONS') == 'true' or os.environ.get('CI') == 'true':
     print("=== Ambiente CI detectado ===")
     
-    # SOLUÇÃO DEFINITIVA: Desativa redirecionamentos
+    # SOLUÇÃO DEFINITIVA: Desativa completamente redirecionamentos
     APPEND_SLASH = False
     DEBUG = False
     PREPEND_WWW = False
+    
+    # DESATIVA redirecionamentos SSL
+    SECURE_SSL_REDIRECT = False
+    SECURE_REDIRECT_EXEMPT = [r'.*']  # Exempt all URLs from redirect
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
     
     # Configurações de banco
     DATABASES['default']['TEST'] = {
@@ -265,13 +272,4 @@ if os.environ.get('GITHUB_ACTIONS') == 'true' or os.environ.get('CI') == 'true':
         'django.contrib.auth.hashers.MD5PasswordHasher',
     ]
     
-    # Configurações de segurança relaxadas para testes
-    SILENCED_SYSTEM_CHECKS = [
-        'security.W001',  # Security middleware
-        'security.W004',  # SECURE_HSTS_SECONDS
-        'security.W008',  # SECURE_SSL_REDIRECT
-        'security.W012',  # SESSION_COOKIE_SECURE
-        'security.W016',  # CSRF_COOKIE_SECURE
-    ]
-    
-    print("Configuração CI aplicada - Redirecionamentos desativados")
+    print("Configuração CI aplicada - Redirecionamentos SSL desativados")
