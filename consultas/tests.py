@@ -57,18 +57,11 @@ class ConsultaCRUDTests(APITestCase):
         print("=== DEBUG CI ===")
         print(f"Testing URL: /api/auth/token/")
         
+        # SOLUÇÃO: Usar Client com follow=True para lidar automaticamente com redirecionamentos
         token_response = self.client.post('/api/auth/token/', {
             'username': 'testuser', 
             'password': 'testpass123'
-        }, format='json')
-        
-        # Se for redirecionamento, seguir o redirect
-        if hasattr(token_response, 'status_code') and token_response.status_code in [301, 302]:
-            print(f"Redirect detected! Following to: {token_response.url}")
-            token_response = self.client.post(token_response.url, {
-                'username': 'testuser', 
-                'password': 'testpass123'
-            }, format='json')
+        }, format='json', follow=True)  # ← ADICIONE follow=True AQUI
         
         print(f"Final response type: {type(token_response)}")
         print(f"Final response status: {getattr(token_response, 'status_code', 'No status')}")
@@ -79,11 +72,24 @@ class ConsultaCRUDTests(APITestCase):
             self.token = token_response.data['access']
             print("✅ Token obtained successfully")
         else:
-            print("❌ Response still has NO data attribute after redirect")
+            print("❌ Response still has NO data attribute")
             print(f"Available attributes: {[attr for attr in dir(token_response) if not attr.startswith('_')]}")
             if hasattr(token_response, 'content'):
                 print(f"Response content: {token_response.content}")
-            self.fail("Authentication failed even after following redirect")
+            
+            # TENTATIVA ALTERNATIVA: Usar a URL completa do testserver
+            print("Trying alternative approach with testserver URL...")
+            token_response = self.client.post('https://testserver/api/auth/token/', {
+                'username': 'testuser', 
+                'password': 'testpass123'
+            }, format='json')
+            
+            if hasattr(token_response, 'data'):
+                print("✅ Alternative approach worked!")
+                self.token = token_response.data['access']
+            else:
+                print("❌ Alternative approach also failed")
+                self.fail("All authentication attempts failed")
         
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token}')
         
