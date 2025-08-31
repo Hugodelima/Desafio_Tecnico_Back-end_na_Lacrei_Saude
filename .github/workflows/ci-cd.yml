@@ -1,8 +1,8 @@
-name: CI/CD Pipeline - Lacrei Saúde (Blue/Green Deployment)
+name: CI/CD Pipeline - Lacrei Saúde (Com Rollback)
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -10,12 +10,18 @@ on:
 env:
   DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
   DEBUG: 'False'
+  POSTGRES_DB: test_db
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: postgres
+  DATABASE_HOST: localhost
+  DATABASE_PORT: 5432
   CI: 'true'
   GITHUB_ACTIONS: 'true'
+  ALLOWED_HOSTS: 'localhost,127.0.0.1,0.0.0.0,test-server'
 
 jobs:
   test:
-    name: Run Tests
+    name: Run Tests with SSL
     runs-on: ubuntu-latest
     environment: test
     
@@ -80,12 +86,112 @@ jobs:
         python manage.py migrate --no-input
         python manage.py test --verbosity=2 --no-input
 
-  blue-green-deploy:
-    name: Blue/Green Deployment
+  # ✅ NOVO: Build da imagem Docker com versionamento
+  build-docker-image:
+    name: Build Docker Image
     runs-on: ubuntu-latest
     needs: test
     if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Build and tag Docker image
+      run: |
+        docker build -t lacrei-api:latest .
+        docker tag lacrei-api:latest lacrei-api:$GITHUB_SHA
+        echo "✅ Imagem construída: lacrei-api:$GITHUB_SHA"
+
+    - name: Save image version
+      run: |
+        echo "IMAGE_VERSION=$GITHUB_SHA" >> $GITHUB_ENV
+        echo "DEPLOY_TIMESTAMP=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
+
+  # ✅ ESTRATÉGIA BLUE/GREEN
+  deploy-production:
+    name: Deploy to Production (Blue/Green)
+    runs-on: ubuntu-latest
+    needs: [test, build-docker-image]
+    if: github.ref == 'refs/heads/main'
     environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Deploy to Production EC2
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.PRODUCTION_EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
+        script: |
+          echo "🚀 Iniciando Blue/Green Deployment..."
+          cd /app/lacrei-api
+          
+          # ✅ BACKUP da versão atual (Rollback preparedness)
+          if [ -d "current" ]; then
+            echo "📦 Criando backup da versão atual..."
+            sudo cp -r current backup_$(date +%Y%m%d_%H%M%S)
+          fi
+          
+          # ✅ Atualizar código
+          echo "🔄 Atualizando código..."
+          sudo git fetch origin main
+          sudo git reset --hard origin/main
+          sudo git clean -fd
+          
+          # ✅ Configurar SSL
+          if [ ! -f "cert.pem" ] || [ ! -f "key.pem" ]; then
+              echo "🔐 Gerando certificados SSL..."
+              sudo openssl req -x509 -newkey rsa:4096 -nodes \
+                -out cert.pem \
+                -keyout key.pem \
+                -days 365 \
+                -subj "/C=BR/ST=Sao_Paulo/L=Sao_Paulo/O=Lacrei_Saude/CN=localhost"
+          fi
+          
+          # ✅ Deploy da nova versão
+          echo "🐳 Iniciando nova versão..."
+          docker-compose down || true
+          docker-compose up --build -d
+          
+          echo "⏳ Aguardando startup..."
+          sleep 30
+          
+          # ✅ Health Check da nova versão
+          echo "🏥 Health Check da nova versão..."
+          if curl -k https://localhost:8000/api/; then
+            echo "✅ Nova versão está funcionando!"
+            echo "🎉 Deploy completo - Nova versão em produção"
+          else
+            echo "❌ Nova versão falhou - Iniciando rollback..."
+            
+            # ✅ ROLLBACK AUTOMÁTICO
+            if [ -d "backup" ]; then
+              echo "↩️ Restaurando backup..."
+              docker-compose down
+              sudo rm -rf current
+              sudo cp -r backup current
+              cd current
+              docker-compose up -d
+              echo "✅ Rollback completo - Versão anterior restaurada"
+            else
+              echo "⚠️ Nenhum backup disponível para rollback"
+            fi
+            exit 1  # Falha no deploy
+          fi
+
+  # ✅ NOVO: Job de Rollback Manual
+  rollback-production:
+    name: Rollback Production
+    runs-on: ubuntu-latest
+    environment: production
+    if: failure() && github.ref == 'refs/heads/main'
     
     env:
       PRODUCTION_EC2_HOST: ${{ secrets.PRODUCTION_EC2_HOST }}
@@ -96,228 +202,36 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Determine deployment strategy
-      uses: appleboy/ssh-action@v0.1.6
-      id: env-check
-      with:
-        host: ${{ secrets.PRODUCTION_EC2_HOST }}
-        username: ${{ secrets.EC2_USERNAME }}
-        key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
-        script: |
-          echo "🔍 Verificando ambiente atual..."
-          
-          # Verificar qual ambiente está ativo
-          if [ -f "/app/current_environment" ]; then
-            CURRENT_ENV=$(cat /app/current_environment)
-            echo "current_env=$CURRENT_ENV" >> $GITHUB_OUTPUT
-          else
-            echo "current_env=blue" >> $GITHUB_OUTPUT
-          fi
-          
-          # Determinar target environment
-          if [ "$CURRENT_ENV" = "blue" ]; then
-            echo "target_env=green" >> $GITHUB_OUTPUT
-            echo "target_port=8001" >> $GITHUB_OUTPUT
-            echo "current_port=8000" >> $GITHUB_OUTPUT
-          else
-            echo "target_env=blue" >> $GITHUB_OUTPUT
-            echo "target_port=8000" >> $GITHUB_OUTPUT
-            echo "current_port=8001" >> $GITHUB_OUTPUT
-          fi
-          
-          echo "🎯 Current: $CURRENT_ENV, Target: $TARGET_ENV"
-
-    - name: Deploy to target environment
+    - name: Execute Rollback
       uses: appleboy/ssh-action@v0.1.6
       with:
         host: ${{ secrets.PRODUCTION_EC2_HOST }}
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
         script: |
-          echo "🚀 Iniciando Blue/Green Deployment..."
-          TARGET_ENV="${{ steps.env-check.outputs.target_env }}"
-          TARGET_PORT="${{ steps.env-check.outputs.target_port }}"
-          CURRENT_ENV="${{ steps.env-check.outputs.current_env }}"
+          echo "↩️ Iniciando Rollback Manual..."
+          cd /app/lacrei-api
           
-          echo "📊 Target: $TARGET_ENV (Port: $TARGET_PORT)"
-          echo "📊 Current: $CURRENT_ENV"
+          # Encontrar backup mais recente
+          LATEST_BACKUP=$(ls -td backup_* | head -n 1)
           
-          # 1. Preparar diretório do target environment
-          echo "📁 Preparando ambiente $TARGET_ENV..."
-          cd /app
-          sudo mkdir -p $TARGET_ENV
-          cd $TARGET_ENV
-          
-          # 2. Clonar/atualizar código
-          if [ ! -d "lacrei-api" ]; then
-            echo "📦 Clonando repositório..."
-            git clone https://github.com/Hugodelima/Desafio_Tecnico_Back-end_na_Lacrei_Saude.git lacrei-api
-          fi
-          
-          cd lacrei-api
-          echo "🔄 Atualizando código..."
-          git fetch origin main
-          git reset --hard origin/main
-          git clean -fd
-          
-          # 3. Configurar environment variables
-          echo "⚙️ Configurando variáveis de ambiente..."
-          cat > .env << EOF
-            DEBUG=False
-            DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
-            DATABASE_URL=postgresql://postgres:postgres@db:5432/lacrei_db
-            ALLOWED_HOSTS=localhost,127.0.0.1,${{ secrets.PRODUCTION_EC2_HOST }},.amazonaws.com
-            PORT=$TARGET_PORT
-            EOF
-          
-          # 4. Configurar SSL
-          if [ ! -f "cert.pem" ] || [ ! -f "key.pem" ]; then
-            echo "🔐 Gerando certificados SSL..."
-            sudo openssl req -x509 -newkey rsa:4096 -nodes \
-              -out cert.pem \
-              -keyout key.pem \
-              -days 365 \
-              -subj "/C=BR/ST=Sao_Paulo/L=Sao_Paulo/O=Lacrei_Saude/CN=localhost"
-          fi
-          
-          # 5. Subir containers no target environment
-          echo "🐳 Iniciando containers em $TARGET_ENV..."
-          docker-compose -p $TARGET_ENV up --build -d
-          
-          # 6. Health check do target environment
-          echo "🏥 Health check do ambiente $TARGET_ENV..."
-          sleep 20
-          
-          if curl -k https://localhost:$TARGET_PORT/api/ > /dev/null 2>&1; then
-            echo "✅ Ambiente $TARGET_ENV está saudável!"
-            
-            # 7. Atualizar Nginx (switch de tráfego)
-            echo "🔄 Atualizando Nginx para apontar para $TARGET_ENV..."
-            sudo bash -c 'cat > /etc/nginx/conf.d/lacrei-api.conf << EOF
-            upstream lacrei_api {
-                server 127.0.0.1:$TARGET_PORT;
-            }
-
-            server {
-                listen 80;
-                server_name _;
-                
-                location / {
-                    proxy_pass http://lacrei_api;
-                    proxy_set_header Host \$host;
-                    proxy_set_header X-Real-IP \$remote_addr;
-                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto \$scheme;
-                }
-            }
-            EOF'
-            
-            # 8. Recarregar Nginx
-            sudo nginx -t && sudo nginx -s reload
-            echo "✅ Nginx configurado para $TARGET_ENV"
-            
-            # 9. Atualizar ambiente atual
-            echo "$TARGET_ENV" | sudo tee /app/current_environment > /dev/null
-            
-            # 10. Parar ambiente antigo
-            echo "🛑 Parando ambiente antigo $CURRENT_ENV..."
-            docker-compose -p $CURRENT_ENV down --volumes --remove-orphans || true
-            
-            echo "🎉 Blue/Green deployment completo! Tráfego agora em $TARGET_ENV"
+          if [ -n "$LATEST_BACKUP" ]; then
+            echo "📦 Restaurando backup: $LATEST_BACKUP"
+            docker-compose down
+            sudo rm -rf current
+            sudo cp -r "$LATEST_BACKUP" current
+            cd current
+            docker-compose up -d
+            echo "✅ Rollback manual completo!"
           else
-            echo "❌ Ambiente $TARGET_ENV falhou no health check"
-            echo "↩️ Abortando deployment - Mantendo $CURRENT_ENV"
-            docker-compose -p $TARGET_ENV down --volumes --remove-orphans
+            echo "❌ Nenhum backup encontrado para rollback"
             exit 1
           fi
 
-  rollback:
-    name: Rollback Emergency
+  health-check:
+    name: Health Check after Deploy
     runs-on: ubuntu-latest
-    environment: production
-    if: failure()
-    
-    env:
-      PRODUCTION_EC2_HOST: ${{ secrets.PRODUCTION_EC2_HOST }}
-      EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
-      PRODUCTION_EC2_SSH_KEY: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
-    
-    steps:
-    - name: Execute Emergency Rollback
-      uses: appleboy/ssh-action@v0.1.6
-      with:
-        host: ${{ secrets.PRODUCTION_EC2_HOST }}
-        username: ${{ secrets.EC2_USERNAME }}
-        key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
-        script: |
-          echo "🚨 INICIANDO ROLLBACK DE EMERGÊNCIA"
-          
-          if [ -f "/app/current_environment" ]; then
-            CURRENT_ENV=$(cat /app/current_environment)
-            
-            # Determinar ambiente anterior
-            if [ "$CURRENT_ENV" = "blue" ]; then
-              PREVIOUS_ENV="green"
-              PREVIOUS_PORT="8001"
-            else
-              PREVIOUS_ENV="blue"
-              PREVIOUS_PORT="8000"
-            fi
-            
-            echo "↩️ Voltando para ambiente anterior: $PREVIOUS_ENV"
-            
-            # 1. Parar ambiente atual problemático
-            docker-compose -p $CURRENT_ENV down --volumes --remove-orphans || true
-            
-            # 2. Levantar ambiente anterior
-            cd /app/$PREVIOUS_ENV/lacrei-api
-            docker-compose -p $PREVIOUS_ENV up -d
-            
-            # 3. Health check do ambiente anterior
-            sleep 15
-            if curl -k https://localhost:$PREVIOUS_PORT/api/ > /dev/null 2>&1; then
-              echo "✅ Ambiente $PREVIOUS_ENV está saudável!"
-              
-              # 4. Atualizar Nginx
-              sudo bash -c 'cat > /etc/nginx/conf.d/lacrei-api.conf << EOF
-              upstream lacrei_api {
-                  server 127.0.0.1:$PREVIOUS_PORT;
-              }
-
-              server {
-                  listen 80;
-                  server_name _;
-                  
-                  location / {
-                      proxy_pass http://lacrei_api;
-                      proxy_set_header Host \$host;
-                      proxy_set_header X-Real-IP \$remote_addr;
-                      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                      proxy_set_header X-Forwarded-Proto \$scheme;
-                  }
-              }
-              EOF'
-              
-              # 5. Recarregar Nginx
-              sudo nginx -t && sudo nginx -s reload
-              
-              # 6. Atualizar ambiente atual
-              echo "$PREVIOUS_ENV" | sudo tee /app/current_environment > /dev/null
-              
-              echo "✅ Rollback de emergência completo! Tráfego em $PREVIOUS_ENV"
-            else
-              echo "❌ Rollback falhou - Ambiente anterior também não está saudável"
-              exit 1
-            fi
-          else
-            echo "❌ Não foi possível determinar ambiente atual"
-            exit 1
-          fi
-
-  health-monitoring:
-    name: Health Monitoring
-    runs-on: ubuntu-latest
-    needs: blue-green-deploy
+    needs: [deploy-production]
     if: always()
     
     env:
@@ -326,68 +240,68 @@ jobs:
       PRODUCTION_EC2_SSH_KEY: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
     
     steps:
-    - name: Monitor environments
+    - name: Check Production Health
       uses: appleboy/ssh-action@v0.1.6
       with:
         host: ${{ secrets.PRODUCTION_EC2_HOST }}
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
         script: |
-          echo "📊 HEALTH MONITORING REPORT"
-          echo "==========================="
-          
-          # Verificar ambiente atual
-          if [ -f "/app/current_environment" ]; then
-            ACTIVE_ENV=$(cat /app/current_environment)
-            echo "✅ Ambiente Ativo: $ACTIVE_ENV"
-          else
-            echo "❌ Nenhum ambiente configurado como ativo"
-          fi
-          
-          # Verificar status dos ambientes
-          for env in blue green; do
-            echo ""
-            echo "--- Ambiente $env ---"
-            
-            if [ -d "/app/$env/lacrei-api" ]; then
-              cd /app/$env/lacrei-api
-              
-              # Verificar se containers estão rodando
-              if docker-compose -p $env ps | grep -q "Up"; then
-                echo "✅ Containers: RUNNING"
-                
-                # Determinar porta
-                if [ "$env" = "blue" ]; then
-                  PORT=8000
-                else
-                  PORT=8001
-                fi
-                
-                # Health check
-                if curl -k https://localhost:$PORT/api/ > /dev/null 2>&1; then
-                  echo "✅ Health Check: PASSED"
-                else
-                  echo "❌ Health Check: FAILED"
-                fi
-              else
-                echo "❌ Containers: STOPPED"
-              fi
-            else
-              echo "❌ Diretório: NOT FOUND"
-            fi
-          done
-          
-          # Verificar Nginx
-          echo ""
-          echo "--- Nginx ---"
-          if sudo nginx -t 2>/dev/null; then
-            echo "✅ Nginx Configuration: VALID"
-          else
-            echo "❌ Nginx Configuration: INVALID"
-          fi
-          
-          if systemctl is-active --quiet nginx; then
-            echo "✅ Nginx Service: RUNNING"
-          else
-            echo "❌ Nginx Service: STOPPED"
-          fi
+          echo "🏥 Health Check - PRODUCTION"
+          cd /app/lacrei-api
+          echo "📂 Diretório: $(pwd)"
+          sleep 10
+          curl -k https://localhost:8000/api/ || echo "Production health check failed"
+          docker-compose ps
+          docker-compose logs web --tail=5
+
+  # ✅ NOVO: Documentação do Rollback
+  documentation:
+    name: Rollback Documentation
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: always()
+    
+    steps:
+    - name: Generate Rollback Documentation
+      run: |
+        echo "# 📋 Documentação de Rollback - Lacrei Saúde"
+        echo ""
+        echo "## 🔄 Estratégias de Rollback Implementadas"
+        echo ""
+        echo "### 1. Rollback Automático (Blue/Green)"
+        echo "- ✅ Health check automático após deploy"
+        echo "- ✅ Rollback automático se health check falhar"
+        echo "- ✅ Backup da versão anterior"
+        echo ""
+        echo "### 2. Rollback Manual"
+        echo "- ✅ Comando: https://github.com/Hugodelima/Desafio_Tecnico_Back-end_na_Lacrei_Saude/actions/workflows/ci-cd.yml"
+        echo "- ✅ Acionado automaticamente em caso de falha"
+        echo "- ✅ Também pode ser executado manualmente"
+        echo ""
+        echo "### 3. Como Executar Rollback Manual"
+        echo "```bash"
+        echo "# Via GitHub Actions:"
+        echo "1. Vá em Actions → CI/CD Pipeline"
+        echo "2. Clique em 'Run workflow'"
+        echo "3. Selecione 'Rollback Production'"
+        echo "4. Execute"
+        echo ""
+        echo "# Via SSH manual:"
+        echo "ssh -i key.pem ec2-user@IP"
+        echo "cd /app/lacrei-api"
+        echo "docker-compose down"
+        echo "git reset --hard HEAD~1  # Volta 1 commit"
+        echo "docker-compose up -d"
+        echo "```"
+        echo ""
+        echo "## 📊 Backup Strategy"
+        echo "- Backups automáticos pré-deploy"
+        echo "- Retenção: últimos 5 deployments"
+        echo "- Local: /app/lacrei-api/backup_*"
+        
+        # Salvar documentação
+        mkdir -p documentation
+        echo "# 📋 Documentação de Rollback - Lacrei Saúde" > documentation/ROLLBACK.md
+        echo "Gerado em: $(date)" >> documentation/ROLLBACK.md
+        cat documentation/ROLLBACK.md

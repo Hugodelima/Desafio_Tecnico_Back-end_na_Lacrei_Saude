@@ -7,35 +7,23 @@ services:
       POSTGRES_DB: lacrei_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   web:
     build: .
-    command: python manage.py runsslserver 0.0.0.0:${PORT:-8000} --certificate /app/cert.pem --key /app/key.pem
+    command: python manage.py runsslserver 0.0.0.0:8000 --certificate /app/cert.pem --key /app/key.pem
     volumes:
       - .:/app
     ports:
-      - "${PORT:-8000}:${PORT:-8000}"
+      - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/lacrei_db
-      - DEBUG=${DEBUG:-False}
-      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
-      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
-      - PORT=${PORT:-8000}
+      - DEBUG=False
     depends_on:
-      db:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-k", "https://localhost:${PORT:-8000}/api/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      - db
 
 volumes:
   postgres_data:
