@@ -1,4 +1,4 @@
-name: CI/CD Pipeline - Lacrei Saúde (Staging + Production)
+name: CI/CD Pipeline - Lacrei Saúde (Amazon Linux Only)
 
 on:
   push:
@@ -77,6 +77,7 @@ jobs:
             echo "✅ PostgreSQL pronto!"
             break
           fi
+          echo "Aguardando PostgreSQL... tentativa $i"
           sleep 3
         done
 
@@ -89,7 +90,7 @@ jobs:
     name: Deploy to Staging EC2
     runs-on: ubuntu-latest
     needs: test
-    if: github.ref == 'refs/heads/develop'  # ← DEPLOY NA DEVELOP
+    if: github.ref == 'refs/heads/develop'
     environment: staging
     
     steps:
@@ -99,14 +100,14 @@ jobs:
     - name: Deploy to Staging EC2
       uses: appleboy/ssh-action@v0.1.6
       with:
-        host: ${{ secrets.STAGING_EC2_HOST }}  # ← IP DA STAGING
+        host: ${{ secrets.STAGING_EC2_HOST }}
         username: ${{ secrets.EC2_USERNAME }}
-        key: ${{ secrets.STAGING_EC2_SSH_KEY }}  # ← CHAVE DA STAGING
+        key: ${{ secrets.STAGING_EC2_SSH_KEY }}
         script: |
-          echo "🚀 Deploying to STAGING..."
+          echo "🚀 Deploying to STAGING EC2..."
           cd /app/lacrei-api
           
-          # Script de deploy
+          # Atualizar código
           sudo git fetch origin develop
           sudo git reset --hard origin/develop
           sudo git clean -fd
@@ -120,49 +121,16 @@ jobs:
                 -subj "/C=BR/ST=Sao_Paulo/L=Sao_Paulo/O=Lacrei_Saude/CN=localhost"
           fi
           
+          # Reconstruir containers
           docker-compose down || true
           docker-compose up --build -d
+          
           echo "✅ Staging deploy complete!"
+          docker-compose ps
+          docker-compose logs web --tail=10
 
   deploy-production:
     name: Deploy to Production EC2
-    runs-on: ubuntu-latest
-    needs: test
-    if: github.ref == 'refs/heads/main'  # ← DEPLOY NA MAIN
-    environment: production
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Deploy to Production EC2
-      uses: appleboy/ssh-action@v0.1.6
-      with:
-        host: ${{ secrets.PRODUCTION_EC2_HOST }}  # ← IP DA PRODUCTION
-        username: ${{ secrets.EC2_USERNAME }}
-        key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}  # ← CHAVE DA PRODUCTION
-        script: |
-          echo "🚀 Deploying to PRODUCTION..."
-          cd /app/lacrei-api
-          
-          sudo git fetch origin main
-          sudo git reset --hard origin/main
-          sudo git clean -fd
-          
-          if [ ! -f "cert.pem" ] || [ ! -f "key.pem" ]; then
-              sudo openssl req -x509 -newkey rsa:4096 -nodes \
-                -out cert.pem \
-                -keyout key.pem \
-                -days 365 \
-                -subj "/C=BR/ST=Sao_Paulo/L=Sao_Paulo/O=Lacrei_Saude/CN=localhost"
-          fi
-          
-          docker-compose down || true
-          docker-compose up --build -d
-          echo "✅ Production deploy complete!"
-
-  deploy-render:
-    name: Deploy to Render (Backup)
     runs-on: ubuntu-latest
     needs: test
     if: github.ref == 'refs/heads/main'
@@ -172,9 +140,276 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Deploy to Render
-      env:
-        RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+    - name: Deploy to Production EC2
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.PRODUCTION_EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
+        script: |
+          echo "🚀 Deploying to PRODUCTION EC2..."
+          cd /app/lacrei-api
+          
+          # Atualizar código
+          sudo git fetch origin main
+          sudo git reset --hard origin/main
+          sudo git clean -fd
+          
+          # Configurar SSL se necessário
+          if [ ! -f "cert.pem" ] || [ ! -f "key.pem" ]; then
+              sudo openssl req -x509 -newkey rsa:4096 -nodes \
+                -out cert.pem \
+                -keyout key.pem \
+                -days 365 \
+                -subj "/C=BR/ST=Sao_Paulo/L=Sao_Paulo/O=Lacrei_Saude/CN=localhost"
+          fi
+          
+          # Reconstruir containers
+          docker-compose down || true
+          docker-compose up --build -d
+          
+          echo "✅ Production deploy complete!"
+          docker-compose ps
+          docker-compose logs web --tail=10
+
+  health-check:
+    name: Health Check after Deploy
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    
+    steps:
+    - name: Check Staging Health
+      if: needs.deploy-staging.result == 'success'
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.STAGING_EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.STAGING_EC2_SSH_KEY }}
+        script: |
+          echo "🏥 Health Check - STAGING"
+          sleep 10
+          curl -k https://localhost:8000/api/ || echo "Staging health check failed"
+          docker-compose ps
+          docker-compose logs web --tail=5
+
+    - name: Check Production Health
+      if: needs.deploy-production.result == 'success'
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.PRODUCTION_EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
+        script: |
+          echo "🏥 Health Check - PRODUCTION"
+          sleep 10
+          curl -k https://localhost:8000/api/ || echo "Production health check failed"
+          docker-compose ps
+          docker-compose logs web --tail=5name: CI/CD Pipeline - Lacrei Saúde (Amazon Linux Only)
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+  DEBUG: 'False'
+  POSTGRES_DB: test_db
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: postgres
+  DATABASE_HOST: localhost
+  DATABASE_PORT: 5432
+  CI: 'true'
+  GITHUB_ACTIONS: 'true'
+  ALLOWED_HOSTS: 'localhost,127.0.0.1,0.0.0.0,test-server'
+
+jobs:
+  test:
+    name: Run Tests with SSL
+    runs-on: ubuntu-latest
+    environment: test
+    
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_DB: test_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install system dependencies
       run: |
-        echo "☁️ Deploying to Render..."
-        curl -X POST "$RENDER_DEPLOY_HOOK_URL" || echo "Render deploy optional"
+        sudo apt-get update
+        sudo apt-get install -y libpq-dev gcc openssl
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install --no-cache-dir -r requirements.txt
+
+    - name: Generate SSL certificates for testing
+      run: |
+        echo "🔐 Gerando certificados SSL para testes..."
+        openssl req -x509 -newkey rsa:4096 -nodes \
+          -out cert.pem \
+          -keyout key.pem \
+          -days 1 \
+          -subj "/C=BR/ST=Test/L=Test/O=Test/CN=localhost" \
+          -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+        echo "✅ Certificados SSL gerados"
+
+    - name: Wait for PostgreSQL
+      run: |
+        for i in {1..10}; do
+          if pg_isready -h localhost -p 5432 -U postgres; then
+            echo "✅ PostgreSQL pronto!"
+            break
+          fi
+          echo "Aguardando PostgreSQL... tentativa $i"
+          sleep 3
+        done
+
+    - name: Run migrations and tests
+      run: |
+        python manage.py migrate --no-input
+        python manage.py test --verbosity=2 --no-input
+
+  deploy-staging:
+    name: Deploy to Staging EC2
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Deploy to Staging EC2
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.STAGING_EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.STAGING_EC2_SSH_KEY }}
+        script: |
+          echo "🚀 Deploying to STAGING EC2..."
+          cd /app/lacrei-api
+          
+          # Atualizar código
+          sudo git fetch origin develop
+          sudo git reset --hard origin/develop
+          sudo git clean -fd
+          
+          # Configurar SSL se necessário
+          if [ ! -f "cert.pem" ] || [ ! -f "key.pem" ]; then
+              sudo openssl req -x509 -newkey rsa:4096 -nodes \
+                -out cert.pem \
+                -keyout key.pem \
+                -days 365 \
+                -subj "/C=BR/ST=Sao_Paulo/L=Sao_Paulo/O=Lacrei_Saude/CN=localhost"
+          fi
+          
+          # Reconstruir containers
+          docker-compose down || true
+          docker-compose up --build -d
+          
+          echo "✅ Staging deploy complete!"
+          docker-compose ps
+          docker-compose logs web --tail=10
+
+  deploy-production:
+    name: Deploy to Production EC2
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Deploy to Production EC2
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.PRODUCTION_EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
+        script: |
+          echo "🚀 Deploying to PRODUCTION EC2..."
+          cd /app/lacrei-api
+          
+          # Atualizar código
+          sudo git fetch origin main
+          sudo git reset --hard origin/main
+          sudo git clean -fd
+          
+          # Configurar SSL se necessário
+          if [ ! -f "cert.pem" ] || [ ! -f "key.pem" ]; then
+              sudo openssl req -x509 -newkey rsa:4096 -nodes \
+                -out cert.pem \
+                -keyout key.pem \
+                -days 365 \
+                -subj "/C=BR/ST=Sao_Paulo/L=Sao_Paulo/O=Lacrei_Saude/CN=localhost"
+          fi
+          
+          # Reconstruir containers
+          docker-compose down || true
+          docker-compose up --build -d
+          
+          echo "✅ Production deploy complete!"
+          docker-compose ps
+          docker-compose logs web --tail=10
+
+  health-check:
+    name: Health Check after Deploy
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    
+    steps:
+    - name: Check Staging Health
+      if: needs.deploy-staging.result == 'success'
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.STAGING_EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.STAGING_EC2_SSH_KEY }}
+        script: |
+          echo "🏥 Health Check - STAGING"
+          sleep 10
+          curl -k https://localhost:8000/api/ || echo "Staging health check failed"
+          docker-compose ps
+          docker-compose logs web --tail=5
+
+    - name: Check Production Health
+      if: needs.deploy-production.result == 'success'
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.PRODUCTION_EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
+        script: |
+          echo "🏥 Health Check - PRODUCTION"
+          sleep 10
+          curl -k https://localhost:8000/api/ || echo "Production health check failed"
+          docker-compose ps
+          docker-compose logs web --tail=5
