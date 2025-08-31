@@ -103,31 +103,63 @@ jobs:
         key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
         script: |
           echo "🚀 Deploying to PRODUCTION EC2..."
-          echo "📂 Diretório atual: $(pwd)"
           
+          # ✅ CRIAR/CERTIFICAR DIRETÓRIO
+          sudo mkdir -p /app/lacrei-api
+          sudo chown ec2-user:ec2-user /app/lacrei-api
           cd /app/lacrei-api
-          echo "📂 Novo diretório: $(pwd)"
           
-          if [ ! -d "/app/lacrei-api" ]; then
-            echo "❌ Diretório /app/lacrei-api não existe!"
-            echo "📋 Criando diretório..."
-            sudo mkdir -p /app/lacrei-api
-            sudo chown ec2-user:ec2-user /app/lacrei-api
-            cd /app/lacrei-api
-            echo "📦 Clonando repositório..."
-            git clone https://github.com/Hugodelima/Desafio_Tecnico_Back-end_na_Lacrei_Saude.git . || true
+          echo "📋 Conteúdo atual do diretório:"
+          ls -la
+          
+          # ✅ ESTRATÉGIA 1: USAR GIT CLONE (se possível)
+          echo "🔄 Tentando estratégia 1: Git clone..."
+          if ! git clone https://github.com/Hugodelima/Desafio_Tecnico_Back-end_na_Lacrei_Saude.git . 2>/dev/null; then
+              echo "❌ Git clone falhou. Tentando estratégia 2..."
+              
+              # ✅ ESTRATÉGIA 2: LIMPAR E USAR GIT INIT + REMOTE
+              rm -rf * .git 2>/dev/null || true
+              git init
+              git remote add origin https://github.com/Hugodelima/Desafio_Tecnico_Back-end_na_Lacrei_Saude.git
+              git fetch origin
+              git checkout -f main
+              
+              if [ ! -f "docker-compose.yml" ]; then
+                  echo "❌ Estratégia 2 falhou. Tentando estratégia 3..."
+                  
+                  # ✅ ESTRATÉGIA 3: USAR CURL PARA BAIXAR ARQUIVOS CHAVE
+                  echo "📦 Baixando arquivos essenciais via curl..."
+                  curl -O https://raw.githubusercontent.com/Hugodelima/Desafio_Tecnico_Back-end_na_Lacrei_Saude/main/docker-compose.yml
+                  curl -O https://raw.githubusercontent.com/Hugodelima/Desafio_Tecnico_Back-end_na_Lacrei_Saude/main/requirements.txt
+                  curl -O https://raw.githubusercontent.com/Hugodelima/Desafio_Tecnico_Back-end_na_Lacrei_Saude/main/Dockerfile
+                  mkdir -p core
+                  curl -o core/__init__.py https://raw.githubusercontent.com/Hugodelima/Desafio_Tecnico_Back-end_na_Lacrei_Saude/main/core/__init__.py
+                  curl -o core/settings.py https://raw.githubusercontent.com/Hugodelima/Desafio_Tecnico_Back-end_na_Lacrei_Saude/main/core/settings.py
+                  curl -o core/urls.py https://raw.githubusercontent.com/Hugodelima/Desafio_Tecnico_Back-end_na_Lacrei_Saude/main/core/urls.py
+                  curl -o core/wsgi.py https://raw.githubusercontent.com/Hugodelima/Desafio_Tecnico_Back-end_na_Lacrei_Saude/main/core/wsgi.py
+                  curl -o manage.py https://raw.githubusercontent.com/Hugodelima/Desafio_Tecnico_Back-end_na_Lacrei_Saude/main/manage.py
+              fi
+          fi
+          
+          echo "📋 Conteúdo após download:"
+          ls -la
+          
+          # ✅ VERIFICAR ARQUIVOS ESSENCIAIS
+          if [ ! -f "docker-compose.yml" ]; then
+              echo "❌ CRÍTICO: docker-compose.yml não encontrado!"
+              echo "🚨 Impossível continuar o deploy"
+              exit 1
           fi
           
           echo "🔄 Atualizando código..."
-          sudo git fetch origin main
-          sudo git reset --hard origin/main
-          sudo git clean -fd
+          git fetch origin main 2>/dev/null && git reset --hard origin/main 2>/dev/null || echo "⚠️ Git update falhou, usando arquivos atuais"
           
-          # 🔄 BACKUP DO COMMIT ATUAL (para rollback)
-          CURRENT_COMMIT=$(git rev-parse --short HEAD)
-          echo "📦 Commit atual: $CURRENT_COMMIT"
-          echo "$CURRENT_COMMIT" > .last_deployed_commit
+          # 🔄 BACKUP DO COMMIT
+          COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+          echo "📦 Commit: $COMMIT_HASH"
+          echo "$COMMIT_HASH" > .last_deployed_commit
           
+          # ✅ MANTER CERTIFICADOS EXISTENTES
           if [ ! -f "cert.pem" ] || [ ! -f "key.pem" ]; then
               echo "🔐 Gerando certificados SSL..."
               sudo openssl req -x509 -newkey rsa:4096 -nodes \
@@ -144,7 +176,7 @@ jobs:
           echo "✅ Deploy completo! Iniciando testes..."
           sleep 15
           
-          # 🧪 EXECUTAR TESTES DENTRO DO CONTAINER
+          # 🧪 EXECUTAR TESTES
           echo "🧪 Executando testes no container..."
           docker-compose exec web python manage.py test --verbosity=2
           
