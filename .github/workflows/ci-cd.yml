@@ -21,7 +21,7 @@ env:
 
 jobs:
   deploy-staging:
-    name: Deploy, Test and Health Check on Staging EC2
+    name: Deploy and Test on Staging EC2
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/develop'
     environment: staging
@@ -30,7 +30,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Deploy, Test and Health Check on Staging EC2
+    - name: Deploy and Test on Staging EC2
       uses: appleboy/ssh-action@v0.1.6
       with:
         host: ${{ secrets.STAGING_EC2_HOST }}
@@ -81,45 +81,12 @@ jobs:
           echo "🧪 Executando testes no container..."
           docker-compose exec web python manage.py test --verbosity=2
           
-          echo "✅ Testes passaram! Fazendo health check..."
-          sleep 10
-          
-          # 🏥 HEALTH CHECK INTEGRADO
-          echo "🏥 Health Check - STAGING"
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -k https://localhost:8000/api/ || echo "000")
-          
-          if [ "$HTTP_STATUS" -eq 200 ]; then
-            echo "✅ STAGING Health check PASSED - Status: $HTTP_STATUS"
-            echo "🌐 URL: https://${{ secrets.STAGING_EC2_HOST }}:8000/api/"
-            echo "🚀 STAGING está ONLINE e funcionando!"
-          else
-            echo "❌ STAGING Health check FAILED - Status: $HTTP_STATUS"
-            echo "📋 Logs dos containers:"
-            docker-compose logs --tail=20
-            
-            echo "🚨 Iniciando procedimento de rollback..."
-            if [ -f ".last_deployed_commit" ]; then
-              LAST_COMMIT=$(cat .last_deployed_commit)
-              echo "↩️ Revertendo STAGING para commit: $LAST_COMMIT"
-              git checkout $LAST_COMMIT
-              
-              echo "🐳 Reconstruindo containers com versão anterior..."
-              docker-compose down || true
-              docker-compose up --build -d
-              
-              echo "🔄 Rollback STAGING completo!"
-            else
-              echo "⚠️ Arquivo .last_deployed_commit não encontrado. Rollback manual necessário."
-            fi
-            exit 1
-          fi
-          
-          echo "✅ Staging deploy complete!"
+          echo "✅ Testes passaram! Staging deploy complete!"
           docker-compose ps
           docker-compose logs web --tail=10
 
   deploy-production:
-    name: Deploy, Test and Health Check on Production EC2
+    name: Deploy and Test on Production EC2
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     environment: production
@@ -128,7 +95,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Deploy, Test and Health Check on Production EC2
+    - name: Deploy and Test on Production EC2
       uses: appleboy/ssh-action@v0.1.6
       with:
         host: ${{ secrets.PRODUCTION_EC2_HOST }}
@@ -181,17 +148,110 @@ jobs:
           echo "🧪 Executando testes no container..."
           docker-compose exec web python manage.py test --verbosity=2
           
-          echo "✅ Testes passaram! Fazendo health check..."
+          echo "✅ Testes passaram! Production deploy complete!"
+          docker-compose ps
+          docker-compose logs web --tail=10
+
+  health-check:
+    name: Health Check after Deploy
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    # ✅ OPÇÃO 1: DEFINIR ENVIRONMENT PARA HEALTH CHECK
+    environment: health-check-environment
+    
+    steps:
+    - name: Determine which environments to check
+      id: env-check
+      run: |
+        # Verificar quais deploys foram bem-sucedidos
+        echo "deploy-staging-result=${{ needs.deploy-staging.result }}" >> $GITHUB_OUTPUT
+        echo "deploy-production-result=${{ needs.deploy-production.result }}" >> $GITHUB_OUTPUT
+        
+        # Log para debugging
+        echo "📊 Resultados dos deploys:"
+        echo "Staging: ${{ needs.deploy-staging.result }}"
+        echo "Production: ${{ needs.deploy-production.result }}"
+
+    - name: Health Check - Staging
+      if: needs.deploy-staging.result == 'success'
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.STAGING_EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.STAGING_EC2_SSH_KEY }}
+        script: |
+          echo "🏥 Health Check - STAGING ENVIRONMENT"
+          cd /app/lacrei-api
+          echo "📂 Diretório: $(pwd)"
+          
+          # Verificar se containers estão rodando
+          echo "🐳 Verificando containers..."
+          docker-compose ps
+          
+          # Aguardar aplicação inicializar
+          echo "⏳ Aguardando aplicação (15 segundos)..."
           sleep 15
           
-          # 🏥 HEALTH CHECK INTEGRADO
-          echo "🏥 Health Check - PRODUCTION"
+          # Teste completo de saúde
+          echo "🔍 Testando endpoint da API..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -k https://localhost:8000/api/ || echo "000")
+          
+          if [ "$HTTP_STATUS" -eq 200 ]; then
+            echo "✅ STAGING Health check PASSED - Status: $HTTP_STATUS"
+            echo "🌐 URL: https://${{ secrets.STAGING_EC2_HOST }}:8000/api/"
+            exit 0
+          else
+            echo "❌ STAGING Health check FAILED - Status: $HTTP_STATUS"
+            echo "📋 Logs dos containers:"
+            docker-compose logs --tail=20
+            
+            echo "🚨 Iniciando procedimento de rollback..."
+            if [ -f ".last_deployed_commit" ]; then
+              LAST_COMMIT=$(cat .last_deployed_commit)
+              echo "↩️ Revertendo STAGING para commit: $LAST_COMMIT"
+              git checkout $LAST_COMMIT
+              
+              echo "🐳 Reconstruindo containers com versão anterior..."
+              docker-compose down || true
+              docker-compose up --build -d
+              
+              echo "🔄 Rollback STAGING completo!"
+            else
+              echo "⚠️ Arquivo .last_deployed_commit não encontrado. Rollback manual necessário."
+            fi
+            exit 1
+          fi
+
+    - name: Health Check - Production
+      if: needs.deploy-production.result == 'success'
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.PRODUCTION_EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
+        script: |
+          echo "🏥 Health Check - PRODUCTION ENVIRONMENT"
+          cd /app/lacrei-api
+          echo "📂 Diretório: $(pwd)"
+          
+          # Verificar se containers estão rodando
+          echo "🐳 Verificando containers..."
+          docker-compose ps
+          
+          # Aguardar mais tempo para produção
+          echo "⏳ Aguardando aplicação (20 segundos)..."
+          sleep 20
+          
+          # Teste completo de saúde
+          echo "🔍 Testando endpoint da API..."
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -k https://localhost:8000/api/ || echo "000")
           
           if [ "$HTTP_STATUS" -eq 200 ]; then
             echo "✅ PRODUCTION Health check PASSED - Status: $HTTP_STATUS"
             echo "🌐 URL: https://${{ secrets.PRODUCTION_EC2_HOST }}:8000/api/"
             echo "🚀 PRODUCTION está ONLINE e funcionando!"
+            exit 0
           else
             echo "❌ PRODUCTION Health check FAILED - Status: $HTTP_STATUS"
             echo "📋 Logs dos containers:"
@@ -224,23 +284,31 @@ jobs:
             fi
             exit 1
           fi
-          
-          echo "✅ Production deploy complete!"
-          docker-compose ps
-          docker-compose logs web --tail=10
+
+    - name: Summary Report
+      run: |
+        echo "📊 RESUMO DO HEALTH CHECK"
+        echo "=========================="
+        echo "Staging: ${{ needs.deploy-staging.result }}"
+        echo "Production: ${{ needs.deploy-production.result }}"
+        
+        if [ "${{ needs.deploy-staging.result }}" == "success" ]; then
+          echo "✅ Staging: Deploy bem-sucedido"
+        else
+          echo "❌ Staging: Deploy falhou ou não executado"
+        fi
+        
+        if [ "${{ needs.deploy-production.result }}" == "success" ]; then
+          echo "✅ Production: Deploy bem-sucedido"
+        else
+          echo "❌ Production: Deploy falhou ou não executado"
+        fi
 
   manual-rollback:
     name: Manual Rollback
     runs-on: ubuntu-latest
     environment: production
     if: github.event_name == 'workflow_dispatch'
-    
-    env:
-      STAGING_EC2_HOST: ${{ secrets.STAGING_EC2_HOST }}
-      PRODUCTION_EC2_HOST: ${{ secrets.PRODUCTION_EC2_HOST }}
-      EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
-      STAGING_EC2_SSH_KEY: ${{ secrets.STAGING_EC2_SSH_KEY }}
-      PRODUCTION_EC2_SSH_KEY: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
     
     steps:
     - name: Checkout code
