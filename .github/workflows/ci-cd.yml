@@ -86,12 +86,75 @@ jobs:
         python manage.py migrate --no-input
         python manage.py test --verbosity=2 --no-input
 
+  setup-ec2-environment:
+    name: Setup EC2 Environment
+    runs-on: ubuntu-latest
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Staging EC2 Directory
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.STAGING_EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.STAGING_EC2_SSH_KEY }}
+        script: |
+          echo "🔧 Configurando ambiente STAGING EC2..."
+          echo "📂 Diretório atual: $(pwd)"
+          
+          # Criar diretório se não existir
+          sudo mkdir -p /app/lacrei-api
+          sudo chown ec2-user:ec2-user /app/lacrei-api
+          echo "✅ Diretório /app/lacrei-api criado"
+          
+          # Verificar se tem git clone
+          if [ ! -d "/app/lacrei-api/.git" ]; then
+              echo "📦 Clonando repositório..."
+              cd /app/lacrei-api
+              git clone https://github.com/Hugodelima/Desafio_Tecnico_Back-end_na_Lacrei_Saude.git .
+              echo "✅ Repositório clonado"
+          else
+              echo "✅ Repositório já existe"
+          fi
+          
+          echo "🎉 Ambiente STAGING configurado!"
+
+    - name: Setup Production EC2 Directory
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.PRODUCTION_EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
+        script: |
+          echo "🔧 Configurando ambiente PRODUCTION EC2..."
+          echo "📂 Diretório atual: $(pwd)"
+          
+          # Criar diretório se não existir
+          sudo mkdir -p /app/lacrei-api
+          sudo chown ec2-user:ec2-user /app/lacrei-api
+          echo "✅ Diretório /app/lacrei-api criado"
+          
+          # Verificar se tem git clone
+          if [ ! -d "/app/lacrei-api/.git" ]; then
+              echo "📦 Clonando repositório..."
+              cd /app/lacrei-api
+              git clone https://github.com/Hugodelima/Desafio_Tecnico_Back-end_na_Lacrei_Saude.git .
+              echo "✅ Repositório clonado"
+          else
+              echo "✅ Repositório já existe"
+          fi
+          
+          echo "🎉 Ambiente PRODUCTION configurado!"
+
   deploy-staging:
     name: Deploy to Staging EC2
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, setup-ec2-environment]
     if: github.ref == 'refs/heads/develop'
-    environment: test
+    environment: staging
     
     steps:
     - name: Checkout code
@@ -105,36 +168,50 @@ jobs:
         key: ${{ secrets.STAGING_EC2_SSH_KEY }}
         script: |
           echo "🚀 Deploying to STAGING EC2..."
+          echo "📂 Diretório atual: $(pwd)"
+          
+          # IR PARA O DIRETÓRIO CORRETO - AJUSTE CRÍTICO!
           cd /app/lacrei-api
+          echo "📂 Agora no diretório: $(pwd)"
+          ls -la
           
           # Atualizar código
+          echo "🔄 Atualizando código..."
           sudo git fetch origin develop
           sudo git reset --hard origin/develop
           sudo git clean -fd
+          echo "✅ Código atualizado"
           
           # Configurar SSL se necessário
           if [ ! -f "cert.pem" ] || [ ! -f "key.pem" ]; then
+              echo "🔐 Gerando certificados SSL..."
               sudo openssl req -x509 -newkey rsa:4096 -nodes \
                 -out cert.pem \
                 -keyout key.pem \
                 -days 365 \
                 -subj "/C=BR/ST=Sao_Paulo/L=Sao_Paulo/O=Lacrei_Saude/CN=localhost"
+              echo "✅ Certificados SSL gerados"
+          else
+              echo "✅ Certificados SSL já existem"
           fi
           
           # Reconstruir containers
+          echo "🐳 Reiniciando containers..."
           docker-compose down || true
           docker-compose up --build -d
           
           echo "✅ Staging deploy complete!"
+          echo "📊 Status dos containers:"
           docker-compose ps
+          echo "📝 Logs recentes:"
           docker-compose logs web --tail=10
 
   deploy-production:
     name: Deploy to Production EC2
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, setup-ec2-environment]
     if: github.ref == 'refs/heads/main'
-    environment: test
+    environment: production
     
     steps:
     - name: Checkout code
@@ -148,28 +225,42 @@ jobs:
         key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
         script: |
           echo "🚀 Deploying to PRODUCTION EC2..."
+          echo "📂 Diretório atual: $(pwd)"
+          
+          # IR PARA O DIRETÓRIO CORRETO - AJUSTE CRÍTICO!
           cd /app/lacrei-api
+          echo "📂 Agora no diretório: $(pwd)"
+          ls -la
           
           # Atualizar código
+          echo "🔄 Atualizando código..."
           sudo git fetch origin main
           sudo git reset --hard origin/main
           sudo git clean -fd
+          echo "✅ Código atualizado"
           
           # Configurar SSL se necessário
           if [ ! -f "cert.pem" ] || [ ! -f "key.pem" ]; then
+              echo "🔐 Gerando certificados SSL..."
               sudo openssl req -x509 -newkey rsa:4096 -nodes \
                 -out cert.pem \
                 -keyout key.pem \
                 -days 365 \
                 -subj "/C=BR/ST=Sao_Paulo/L=Sao_Paulo/O=Lacrei_Saude/CN=localhost"
+              echo "✅ Certificados SSL gerados"
+          else
+              echo "✅ Certificados SSL já existem"
           fi
           
           # Reconstruir containers
+          echo "🐳 Reiniciando containers..."
           docker-compose down || true
           docker-compose up --build -d
           
           echo "✅ Production deploy complete!"
+          echo "📊 Status dos containers:"
           docker-compose ps
+          echo "📝 Logs recentes:"
           docker-compose logs web --tail=10
 
   health-check:
@@ -188,8 +279,10 @@ jobs:
         key: ${{ secrets.STAGING_EC2_SSH_KEY }}
         script: |
           echo "🏥 Health Check - STAGING"
+          echo "📂 Diretório: $(pwd)"
+          cd /app/lacrei-api
           sleep 10
-          curl -k https://localhost:8000/api/ || echo "Staging health check failed"
+          curl -k https://localhost:8000/api/ || echo "⚠️ Staging health check failed - pode estar inicializando"
           docker-compose ps
           docker-compose logs web --tail=5
 
@@ -202,7 +295,9 @@ jobs:
         key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
         script: |
           echo "🏥 Health Check - PRODUCTION"
+          echo "📂 Diretório: $(pwd)"
+          cd /app/lacrei-api
           sleep 10
-          curl -k https://localhost:8000/api/ || echo "Production health check failed"
+          curl -k https://localhost:8000/api/ || echo "⚠️ Production health check failed - pode estar inicializando"
           docker-compose ps
           docker-compose logs web --tail=5
