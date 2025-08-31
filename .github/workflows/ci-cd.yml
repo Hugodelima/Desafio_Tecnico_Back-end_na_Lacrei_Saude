@@ -89,7 +89,7 @@ jobs:
   setup-ec2-environment:
     name: Setup EC2 Environment
     runs-on: ubuntu-latest
-    environment: staging
+    environment: test
     
     steps:
     - name: Checkout code
@@ -154,7 +154,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test, setup-ec2-environment]
     if: github.ref == 'refs/heads/develop'
-    environment: staging
+    environment: test
     
     steps:
     - name: Checkout code
@@ -211,7 +211,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test, setup-ec2-environment]
     if: github.ref == 'refs/heads/main'
-    environment: production
+    environment: test
     
     steps:
     - name: Checkout code
