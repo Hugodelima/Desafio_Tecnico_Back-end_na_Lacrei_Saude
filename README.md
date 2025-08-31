@@ -11,23 +11,113 @@ Esta API RESTful foi desenvolvida como parte do desafio técnico da **Lacrei Sa�
 - **Django REST Framework**
 - **PostgreSQL**
 - **Docker + Docker Compose**
-- **Render.com** (deploy)
+- **Amazon EC2** (deploy production + staging)
 
-- **GitHub Actions** (CI/CD)
+- **GitHub Actions** (CI/CD automatizado)
 - **.env** para variáveis sensíveis
 - **APITestCase** para testes automatizados
 - **JWT Authentication**
-- **Swagger/OpenAPI (documentação)**
+- **Swagger/OpenAPI** (documentação)
+- **SSL/HTTPS** com certificados autoassinados
+
 ---
 
-## 🐳 Setup com Docker (recomendado)
+## 🌐 Ambientes Deployados
+
+### **Production Environment**
+- **URL**: https://3.92.21.223:8000/
+- **Branch**: `main`
+- **IP**: 3.92.21.223
+
+### **Staging Environment** 
+- **URL**: https://54.146.210.114:8000/
+- **Branch**: `develop`
+- **IP**: 54.146.210.114
+
+---
+
+## 🛠️ Setup do Ambiente AWS EC2
+
+### 1. Criar Instância EC2
+- **AMI**: Amazon Linux 2023
+- **Tipo**: t2.micro ou t3.small
+- **Storage**: 20GB GP2
+- **Key Pair**: Criar ou usar par de chaves existente
+
+### 2. Configurar Security Group
+**Regras de Entrada:**
+- **Porta 22 (SSH)**: 0.0.0.0/0 - Para acesso SSH
+- **Porta 8000 (HTTPs)**: 0.0.0.0/0 - Para acesso à API
+- **Porta 5432 (PostgreSQL)**: 0.0.0.0/0 - Para banco de dados
+
+### 3. Instalar Dependências na EC2
+```bash
+# Conectar na EC2
+ssh -i sua-chave.pem ec2-user@IP_DA_EC2
+
+# Instalar dependências
+sudo yum update -y
+sudo yum install -y git docker
+
+# Instalar Docker Compose
+sudo curl -L "https://github.com/docker/compose/releases/download/v2.23.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+
+# Iniciar e habilitar Docker
+sudo systemctl start docker
+sudo systemctl enable docker
+
+# Adicionar usuário ao grupo docker
+sudo usermod -a -G docker ec2-user
+
+# Reiniciar sessão SSH
+exit
+ssh -i sua-chave.pem ec2-user@IP_DA_EC2
+```
+
+### 4. Configurar Ambiente
+```bash
+# Criar diretório da aplicação
+sudo mkdir -p /app/lacrei-api
+sudo chown ec2-user:ec2-user /app/lacrei-api
+cd /app/lacrei-api
+```
+
+---
+
+## 🔧 Configuração do Django
+
+### **Settings Importantes:**
+```python
+# Em core/settings.py
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1', 
+    '3.92.21.223',    # IP da Production
+    '54.146.210.114', # IP da Staging
+    '.amazonaws.com'
+]
+
+# Para HTTPS
+SECURE_SSL_REDIRECT = False  # Gerenciado pelo runsslserver
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+CSRF_TRUSTED_ORIGINS = [
+    'https://3.92.21.223:8000',
+    'https://54.146.210.114:8000'
+]
+```
+
+---
+
+## 🐳 Setup com Docker (Local/Desenvolvimento)
 
 ### 1. Subir o ambiente
 ```bash
 sudo docker compose up --build
 ```
 
-### 2. Acessar o container para migração(se necessário)
+### 2. Acessar o container para migração
 ```bash
 sudo docker compose exec web bash
 python manage.py migrate
@@ -35,26 +125,42 @@ python manage.py migrate
 
 ### 3. API disponível em:
 ```
-http://localhost:8000
+https://localhost:8000  (com SSL autoassinado)
 ```
 
 ---
 
 ## ✅ Endpoints Disponíveis
 
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| GET | `/api/profissionais/` | Lista todos os profissionais |
-| POST | `/api/profissionais/` | Cria um profissional |
-| GET | `/api/profissionais/<id>/` | Detalha um profissional |
-| PUT | `/api/profissionais/<id>/` | Atualiza um profissional |
-| DELETE | `/api/profissionais/<id>/` | Deleta um profissional |
-| GET | `/api/consultas/` | Lista todas as consultas |
-| POST | `/api/consultas/` | Cria uma consulta |
-| GET | `/api/consultas/<id>/` | Detalha uma consulta |
-| PUT | `/api/consultas/<id>/` | Atualiza uma consulta |
-| DELETE | `/api/consultas/<id>/` | Deleta uma consulta |
-| GET | `/api/consultas/?profissional_id=<id>` | Filtra consultas por profissional |
+| Método | Rota | Descrição | Autenticação |
+|--------|------|-----------|-------------|
+| GET | `/api/profissionais/` | Lista profissionais | JWT Required |
+| POST | `/api/profissionais/` | Cria profissional | JWT Required |
+| GET | `/api/profissionais/<id>/` | Detalha profissional | JWT Required |
+| PUT | `/api/profissionais/<id>/` | Atualiza profissional | JWT Required |
+| DELETE | `/api/profissionais/<id>/` | Deleta profissional | JWT Required |
+| GET | `/api/consultas/` | Lista consultas | JWT Required |
+| POST | `/api/consultas/` | Cria consulta | JWT Required |
+| GET | `/api/consultas/<id>/` | Detalha consulta | JWT Required |
+| PUT | `/api/consultas/<id>/` | Atualiza consulta | JWT Required |
+| DELETE | `/api/consultas/<id>/` | Deleta consulta | JWT Required |
+---
+
+## 🔁 CI/CD com GitHub Actions
+
+### **Fluxo Automatizado:**
+1. **Push para `develop`** → Deploy automático para Staging EC2
+2. **Push para `main`** → Deploy automático para Production EC2
+3. **Testes automatizados** executados no EC2 após deploy
+4. **Health checks** verificam integridade da aplicação
+5. **Rollback automático** em caso de falha
+
+### **Features do CI/CD:**
+- ✅ Testes automatizados no EC2
+- ✅ Deploy com zero downtime
+- ✅ Rollback automático
+- ✅ Health checks inteligentes
+- ✅ Notificações de erro
 
 ---
 
@@ -62,50 +168,50 @@ http://localhost:8000
 
 ### Como rodar os testes:
 ```bash
+# Localmente
 python manage.py test
+
+# No container
+docker-compose exec web python manage.py test
+
+# No EC2 (após deploy)
+docker-compose exec web python manage.py test --verbosity=2
 ```
 
 ### Localização dos testes:
 - `consultas/tests.py`
 - `profissionais/tests.py`
 
-### Testes incluem:
+### Cobertura de testes:
 - CRUD completo de profissionais
-- CRUD completo de consultas
+- CRUD completo de consultas  
 - Validações e relacionamentos
 - Testes de integração
+- Autenticação JWT
 
 ---
 
-## ☁️ Deploy no Render
+## 🔒 Segurança Implementada
 
-A aplicação foi publicada em produção utilizando **Render.com** com:
-
-- Dockerfile personalizado
-- Banco de dados PostgreSQL do próprio Render
-- Configuração `.env` via painel
-- CMD adaptado no Dockerfile para usar porta dinâmica:
-
-```dockerfile
-CMD ["sh", "-c", "python manage.py runserver 0.0.0.0:${PORT:-8000}"]
-```
+- **HTTPS** com certificados SSL autoassinados
+- **JWT Authentication** para todos os endpoints
+- **CORS** configurado adequadamente
+- **Environment variables** para dados sensíveis
+- **Docker security** best practices
+- **PostgreSQL** com conexões seguras
 
 ---
 
-## 🔁 CI/CD com GitHub Actions
+## 📋 Estratégia de Deploy
 
-O deploy é automatizado via **Render** (Web Service conectado ao GitHub), acionado a cada push na branch `main`.
+### **Branch Strategy:**
+- **`develop`** → Staging Environment (testes)
+- **`main`** → Production Environment (produção)
 
----
-
-## 💡 Decisões Técnicas
-
-- **Django REST Framework**: Escolhido pela rapidez no desenvolvimento e boas práticas REST
-- **Arquitetura por apps**: Divisão entre `profissionais` e `consultas` para melhor organização
-- **PostgreSQL**: Banco relacional robusto e compatível com ambiente de produção
-- **Variáveis de ambiente**: Uso de `.env` para garantir segurança de credenciais
-- **Configurações de segurança**: `ALLOWED_HOSTS`, `DEBUG=False`, validação rigorosa de input
-- **Docker**: Containerização para facilitar deploy e desenvolvimento
+### **Rollback Automático:**
+- Health checks monitoram integridade
+- Rollback para commit anterior em caso de falha
+- Backup automático do último commit estável
 
 ---
 
@@ -122,24 +228,58 @@ O deploy é automatizado via **Render** (Web Service conectado ao GitHub), acion
 │   ├── serializers.py
 │   ├── views.py
 │   └── tests.py
-├── lacrei_api/
+├── core/
 │   ├── settings.py
 │   ├── urls.py
 │   └── wsgi.py
+├── .github/
+│   └── workflows/
+│       └── ci-cd.yml
 ├── docker-compose.yml
 ├── Dockerfile
 ├── requirements.txt
 ├── .env.example
+├── setup_ssl.sh
 └── README.md
 ```
 
 ---
 
-## ☁️ Deploy no Render
+## 🚀 Deploy Manual (Emergência)
 
-A aplicação está em produção no Render.com no seguinte link:
+```bash
+# Conectar na EC2
+ssh -i production-key.pem ec2-user@3.92.21.223
 
-**https://lacrei-api.onrender.com/**
+# Fazer deploy manual
+cd /app/lacrei-api
+git fetch origin main
+git reset --hard origin/main
+docker-compose down
+docker-compose up --build -d
+```
+
+---
+
+## ⚠️ Troubleshooting Comum
+
+### **Erro de Conexão:**
+```bash
+# Verificar se containers estão rodando
+docker-compose ps
+
+# Verificar logs
+docker-compose logs web
+
+# Testar conexão com banco
+docker-compose exec db psql -U postgres
+```
+
+### **Erro de SSL:**
+```bash
+# Gerar novos certificados
+./setup_ssl.sh
+```
 
 ---
 
@@ -156,3 +296,5 @@ Feito com 💙 por **Hugo** para a **Lacrei Saúde**.
 ## 📝 Licença
 
 Este projeto foi desenvolvido como parte de um desafio técnico e é de uso educacional.
+
+**⚠️ Nota**: Os IPs e URLs podem mudar conforme a infraestrutura evolui. Sempre verifique os IPs atuais no painel da AWS.
