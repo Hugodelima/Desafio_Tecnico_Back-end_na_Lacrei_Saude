@@ -211,6 +211,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [deploy-staging, deploy-production]
     if: always()
+    environment: test
     
     steps:
     - name: Check Staging Health
