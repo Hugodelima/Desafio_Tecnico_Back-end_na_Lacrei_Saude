@@ -86,36 +86,69 @@ jobs:
         python manage.py migrate --no-input
         python manage.py test --verbosity=2 --no-input
 
-  # ✅ NOVO: Build da imagem Docker com versionamento
-  build-docker-image:
-    name: Build Docker Image
+  deploy-staging:
+    name: Deploy to Staging EC2
     runs-on: ubuntu-latest
     needs: test
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/develop'
+    environment: test
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
+    - name: Deploy to Staging EC2
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.STAGING_EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.STAGING_EC2_SSH_KEY }}
+        script: |
+          echo "🚀 Deploying to STAGING EC2..."
+          echo "📂 Diretório atual: $(pwd)"
+          
+          cd /app/lacrei-api
+          echo "📂 Novo diretório: $(pwd)"
+          
+          if [ ! -d "/app/lacrei-api" ]; then
+            echo "❌ Diretório /app/lacrei-api não existe!"
+            echo "📋 Criando diretório..."
+            sudo mkdir -p /app/lacrei-api
+            sudo chown ec2-user:ec2-user /app/lacrei-api
+            cd /app/lacrei-api
+          fi
+          
+          echo "🔄 Atualizando código..."
+          sudo git fetch origin develop
+          sudo git reset --hard origin/develop
+          sudo git clean -fd
+          
+          # 🔄 BACKUP DO COMMIT ATUAL (para rollback)
+          CURRENT_COMMIT=$(git rev-parse --short HEAD)
+          echo "📦 Commit atual: $CURRENT_COMMIT"
+          echo "$CURRENT_COMMIT" > .last_deployed_commit
+          
+          if [ ! -f "cert.pem" ] || [ ! -f "key.pem" ]; then
+              echo "🔐 Gerando certificados SSL..."
+              sudo openssl req -x509 -newkey rsa:4096 -nodes \
+                -out cert.pem \
+                -keyout key.pem \
+                -days 365 \
+                -subj "/C=BR/ST=Sao_Paulo/L=Sao_Paulo/O=Lacrei_Saude/CN=localhost"
+          fi
+          
+          echo "🐳 Reiniciando containers..."
+          docker-compose down || true
+          docker-compose up --build -d
+          
+          echo "✅ Staging deploy complete!"
+          docker-compose ps
+          docker-compose logs web --tail=10
 
-    - name: Build and tag Docker image
-      run: |
-        docker build -t lacrei-api:latest .
-        docker tag lacrei-api:latest lacrei-api:$GITHUB_SHA
-        echo "✅ Imagem construída: lacrei-api:$GITHUB_SHA"
-
-    - name: Save image version
-      run: |
-        echo "IMAGE_VERSION=$GITHUB_SHA" >> $GITHUB_ENV
-        echo "DEPLOY_TIMESTAMP=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
-
-  # ✅ ESTRATÉGIA BLUE/GREEN
   deploy-production:
-    name: Deploy to Production (Blue/Green)
+    name: Deploy to Production EC2
     runs-on: ubuntu-latest
-    needs: [test, build-docker-image]
+    needs: test
     if: github.ref == 'refs/heads/main'
     environment: production
     
@@ -130,22 +163,32 @@ jobs:
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
         script: |
-          echo "🚀 Iniciando Blue/Green Deployment..."
-          cd /app/lacrei-api
+          echo "🚀 Deploying to PRODUCTION EC2..."
+          echo "📂 Diretório atual: $(pwd)"
           
-          # ✅ BACKUP da versão atual (Rollback preparedness)
-          if [ -d "current" ]; then
-            echo "📦 Criando backup da versão atual..."
-            sudo cp -r current backup_$(date +%Y%m%d_%H%M%S)
+          cd /app/lacrei-api
+          echo "📂 Novo diretório: $(pwd)"
+          
+          if [ ! -d "/app/lacrei-api" ]; then
+            echo "❌ Diretório /app/lacrei-api não existe!"
+            echo "📋 Criando diretório..."
+            sudo mkdir -p /app/lacrei-api
+            sudo chown ec2-user:ec2-user /app/lacrei-api
+            cd /app/lacrei-api
+            echo "📦 Clonando repositório..."
+            git clone https://github.com/Hugodelima/Desafio_Tecnico_Back-end_na_Lacrei_Saude.git . || true
           fi
           
-          # ✅ Atualizar código
           echo "🔄 Atualizando código..."
           sudo git fetch origin main
           sudo git reset --hard origin/main
           sudo git clean -fd
           
-          # ✅ Configurar SSL
+          # 🔄 BACKUP DO COMMIT ATUAL (para rollback)
+          CURRENT_COMMIT=$(git rev-parse --short HEAD)
+          echo "📦 Commit atual: $CURRENT_COMMIT"
+          echo "$CURRENT_COMMIT" > .last_deployed_commit
+          
           if [ ! -f "cert.pem" ] || [ ! -f "key.pem" ]; then
               echo "🔐 Gerando certificados SSL..."
               sudo openssl req -x509 -newkey rsa:4096 -nodes \
@@ -155,92 +198,70 @@ jobs:
                 -subj "/C=BR/ST=Sao_Paulo/L=Sao_Paulo/O=Lacrei_Saude/CN=localhost"
           fi
           
-          # ✅ Deploy da nova versão
-          echo "🐳 Iniciando nova versão..."
+          echo "🐳 Reiniciando containers..."
           docker-compose down || true
           docker-compose up --build -d
           
-          echo "⏳ Aguardando startup..."
-          sleep 30
-          
-          # ✅ Health Check da nova versão
-          echo "🏥 Health Check da nova versão..."
-          if curl -k https://localhost:8000/api/; then
-            echo "✅ Nova versão está funcionando!"
-            echo "🎉 Deploy completo - Nova versão em produção"
-          else
-            echo "❌ Nova versão falhou - Iniciando rollback..."
-            
-            # ✅ ROLLBACK AUTOMÁTICO
-            if [ -d "backup" ]; then
-              echo "↩️ Restaurando backup..."
-              docker-compose down
-              sudo rm -rf current
-              sudo cp -r backup current
-              cd current
-              docker-compose up -d
-              echo "✅ Rollback completo - Versão anterior restaurada"
-            else
-              echo "⚠️ Nenhum backup disponível para rollback"
-            fi
-            exit 1  # Falha no deploy
-          fi
-
-  # ✅ NOVO: Job de Rollback Manual
-  rollback-production:
-    name: Rollback Production
-    runs-on: ubuntu-latest
-    environment: production
-    if: failure() && github.ref == 'refs/heads/main'
-    
-    env:
-      PRODUCTION_EC2_HOST: ${{ secrets.PRODUCTION_EC2_HOST }}
-      EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
-      PRODUCTION_EC2_SSH_KEY: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Execute Rollback
-      uses: appleboy/ssh-action@v0.1.6
-      with:
-        host: ${{ secrets.PRODUCTION_EC2_HOST }}
-        username: ${{ secrets.EC2_USERNAME }}
-        key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
-        script: |
-          echo "↩️ Iniciando Rollback Manual..."
-          cd /app/lacrei-api
-          
-          # Encontrar backup mais recente
-          LATEST_BACKUP=$(ls -td backup_* | head -n 1)
-          
-          if [ -n "$LATEST_BACKUP" ]; then
-            echo "📦 Restaurando backup: $LATEST_BACKUP"
-            docker-compose down
-            sudo rm -rf current
-            sudo cp -r "$LATEST_BACKUP" current
-            cd current
-            docker-compose up -d
-            echo "✅ Rollback manual completo!"
-          else
-            echo "❌ Nenhum backup encontrado para rollback"
-            exit 1
-          fi
+          echo "✅ Production deploy complete!"
+          docker-compose ps
+          docker-compose logs web --tail=10
 
   health-check:
     name: Health Check after Deploy
     runs-on: ubuntu-latest
-    needs: [deploy-production]
+    needs: [deploy-staging, deploy-production]
     if: always()
     
     env:
+      STAGING_EC2_HOST: ${{ secrets.STAGING_EC2_HOST }}
       PRODUCTION_EC2_HOST: ${{ secrets.PRODUCTION_EC2_HOST }}
       EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+      STAGING_EC2_SSH_KEY: ${{ secrets.STAGING_EC2_SSH_KEY }}
       PRODUCTION_EC2_SSH_KEY: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
     
     steps:
+    - name: Check Staging Health
+      if: needs.deploy-staging.result == 'success'
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.STAGING_EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.STAGING_EC2_SSH_KEY }}
+        script: |
+          echo "🏥 Health Check - STAGING"
+          cd /app/lacrei-api
+          echo "📂 Diretório: $(pwd)"
+          sleep 10
+          
+          # Teste completo de saúde
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -k https://localhost:8000/api/ || echo "000")
+          
+          if [ "$HTTP_STATUS" -eq 200 ]; then
+            echo "✅ Health check PASSED - Status: $HTTP_STATUS"
+            exit 0
+          else
+            echo "❌ Health check FAILED - Status: $HTTP_STATUS"
+            echo "🚨 Iniciando procedimento de rollback..."
+            
+            # 📦 ROLLBACK AUTOMÁTICO
+            if [ -f ".last_deployed_commit" ]; then
+              LAST_COMMIT=$(cat .last_deployed_commit)
+              echo "↩️ Revertendo para commit: $LAST_COMMIT"
+              git checkout $LAST_COMMIT
+              
+              echo "🐳 Reconstruindo containers com versão anterior..."
+              docker-compose down || true
+              docker-compose up --build -d
+              
+              echo "🔄 Rollback completo!"
+            else
+              echo "⚠️ Arquivo .last_deployed_commit não encontrado. Rollback manual necessário."
+            fi
+            exit 1
+          fi
+
     - name: Check Production Health
+      if: needs.deploy-production.result == 'success'
       uses: appleboy/ssh-action@v0.1.6
       with:
         host: ${{ secrets.PRODUCTION_EC2_HOST }}
@@ -250,58 +271,100 @@ jobs:
           echo "🏥 Health Check - PRODUCTION"
           cd /app/lacrei-api
           echo "📂 Diretório: $(pwd)"
-          sleep 10
-          curl -k https://localhost:8000/api/ || echo "Production health check failed"
-          docker-compose ps
-          docker-compose logs web --tail=5
+          sleep 15  # ⏰ Mais tempo para produção
+          
+          # Teste completo de saúde
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -k https://localhost:8000/api/ || echo "000")
+          
+          if [ "$HTTP_STATUS" -eq 200 ]; then
+            echo "✅ Health check PASSED - Status: $HTTP_STATUS"
+            exit 0
+          else
+            echo "❌ Health check FAILED - Status: $HTTP_STATUS"
+            echo "🚨 ALERTA: Falha em PRODUCTION - Rollback necessário"
+            
+            # 📦 ROLLBACK AUTOMÁTICO PARA PRODUÇÃO
+            if [ -f ".last_deployed_commit" ]; then
+              LAST_COMMIT=$(cat .last_deployed_commit)
+              echo "↩️ Revertendo PRODUCTION para commit: $LAST_COMMIT"
+              git checkout $LAST_COMMIT
+              
+              echo "🐳 Reconstruindo containers com versão estável..."
+              docker-compose down || true
+              docker-compose up --build -d
+              
+              echo "🔄 Rollback de PRODUÇÃO completo!"
+              echo "📞 Notificar equipe: production@lacrei.com"
+            else
+              echo "⚠️ Arquivo .last_deployed_commit não encontrado. Rollback manual urgente!"
+              echo "📞 Acionar equipe de plantão imediatamente!"
+            fi
+            exit 1
+          fi
 
-  # ✅ NOVO: Documentação do Rollback
-  documentation:
-    name: Rollback Documentation
+  # 🆕 NOVO JOB: ROLLBACK MANUAL
+  manual-rollback:
+    name: Manual Rollback
     runs-on: ubuntu-latest
-    needs: [deploy-production]
-    if: always()
+    environment: production
+    if: github.event_name == 'workflow_dispatch'
+    
+    env:
+      STAGING_EC2_HOST: ${{ secrets.STAGING_EC2_HOST }}
+      PRODUCTION_EC2_HOST: ${{ secrets.PRODUCTION_EC2_HOST }}
+      EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+      STAGING_EC2_SSH_KEY: ${{ secrets.STAGING_EC2_SSH_KEY }}
+      PRODUCTION_EC2_SSH_KEY: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
     
     steps:
-    - name: Generate Rollback Documentation
-      run: |
-        echo "# 📋 Documentação de Rollback - Lacrei Saúde"
-        echo ""
-        echo "## 🔄 Estratégias de Rollback Implementadas"
-        echo ""
-        echo "### 1. Rollback Automático (Blue/Green)"
-        echo "- ✅ Health check automático após deploy"
-        echo "- ✅ Rollback automático se health check falhar"
-        echo "- ✅ Backup da versão anterior"
-        echo ""
-        echo "### 2. Rollback Manual"
-        echo "- ✅ Comando: https://github.com/Hugodelima/Desafio_Tecnico_Back-end_na_Lacrei_Saude/actions/workflows/ci-cd.yml"
-        echo "- ✅ Acionado automaticamente em caso de falha"
-        echo "- ✅ Também pode ser executado manualmente"
-        echo ""
-        echo "### 3. Como Executar Rollback Manual"
-        echo "```bash"
-        echo "# Via GitHub Actions:"
-        echo "1. Vá em Actions → CI/CD Pipeline"
-        echo "2. Clique em 'Run workflow'"
-        echo "3. Selecione 'Rollback Production'"
-        echo "4. Execute"
-        echo ""
-        echo "# Via SSH manual:"
-        echo "ssh -i key.pem ec2-user@IP"
-        echo "cd /app/lacrei-api"
-        echo "docker-compose down"
-        echo "git reset --hard HEAD~1  # Volta 1 commit"
-        echo "docker-compose up -d"
-        echo "```"
-        echo ""
-        echo "## 📊 Backup Strategy"
-        echo "- Backups automáticos pré-deploy"
-        echo "- Retenção: últimos 5 deployments"
-        echo "- Local: /app/lacrei-api/backup_*"
-        
-        # Salvar documentação
-        mkdir -p documentation
-        echo "# 📋 Documentação de Rollback - Lacrei Saúde" > documentation/ROLLBACK.md
-        echo "Gerado em: $(date)" >> documentation/ROLLBACK.md
-        cat documentation/ROLLBACK.md
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Rollback Staging
+      if: github.event.inputs.environment == 'staging'
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.STAGING_EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.STAGING_EC2_SSH_KEY }}
+        script: |
+          echo "↩️ Manual Rollback - STAGING"
+          cd /app/lacrei-api
+          
+          if [ -f ".last_deployed_commit" ]; then
+            LAST_COMMIT=$(cat .last_deployed_commit)
+            echo "Revertendo para commit: $LAST_COMMIT"
+            git checkout $LAST_COMMIT
+            docker-compose down || true
+            docker-compose up --build -d
+            echo "✅ Rollback manual completo!"
+          else
+            echo "❌ .last_deployed_commit não encontrado"
+            echo "📋 Últimos commits disponíveis:"
+            git log --oneline -5
+          fi
+
+    - name: Rollback Production
+      if: github.event.inputs.environment == 'production'
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.PRODUCTION_EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.PRODUCTION_EC2_SSH_KEY }}
+        script: |
+          echo "↩️ Manual Rollback - PRODUCTION"
+          cd /app/lacrei-api
+          
+          if [ -f ".last_deployed_commit" ]; then
+            LAST_COMMIT=$(cat .last_deployed_commit)
+            echo "Revertendo PRODUCTION para commit: $LAST_COMMIT"
+            git checkout $LAST_COMMIT
+            docker-compose down || true
+            docker-compose up --build -d
+            echo "✅ Rollback de produção completo!"
+          else
+            echo "❌ .last_deployed_commit não encontrado"
+            echo "🚨 Rollback manual necessário:"
+            echo "git checkout COMMIT_ANTERIOR"
+            echo "docker-compose up --build -d"
+          fi
