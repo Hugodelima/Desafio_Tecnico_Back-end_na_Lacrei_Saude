@@ -23,7 +23,6 @@ jobs:
   test:
     name: Run Tests with SSL
     runs-on: ubuntu-latest
-    environment: test
     
     services:
       postgres:
@@ -302,7 +301,6 @@ jobs:
             exit 1
           fi
 
-  # 🆕 NOVO JOB: ROLLBACK MANUAL
   manual-rollback:
     name: Manual Rollback
     runs-on: ubuntu-latest
